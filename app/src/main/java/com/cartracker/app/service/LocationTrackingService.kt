@@ -1,0 +1,360 @@
+package com.cartracker.app.service
+
+import android.app.*
+import android.content.Context
+import android.content.Intent
+import android.location.Location
+import android.os.*
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
+import com.cartracker.app.CarTrackerApp
+import com.cartracker.app.R
+import com.cartracker.app.data.AppDatabase
+import com.cartracker.app.data.LocationPoint
+import com.cartracker.app.data.Trip
+import com.cartracker.app.ui.MainActivity
+import com.google.android.gms.location.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.TimeUnit
+
+class LocationTrackingService : LifecycleService() {
+
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationCallback: LocationCallback
+    private lateinit var db: AppDatabase
+
+    private var currentTripId: Long? = null
+    private var isMoving = false
+    private var lastLocation: Location? = null
+    private var stationaryStartTime: Long = 0
+    private var totalDistance: Double = 0.0
+    private var pointCount: Int = 0
+    private var speedSum: Float = 0f
+
+    // Wake lock to keep tracking in background
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    companion object {
+        private const val TAG = "LocationTrackingService"
+
+        // Speed threshold: below this = considered parked (km/h)
+        private const val PARKING_SPEED_THRESHOLD = 3.0f
+
+        // Time stationary before ending trip (milliseconds) - 2 minutes
+        private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
+
+        // Location update intervals
+        private const val ACTIVE_INTERVAL_MS = 3000L       // 3 seconds when moving
+        private const val PASSIVE_INTERVAL_MS = 15000L      // 15 seconds when parked (battery save)
+        private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
+
+        // Data retention: 30 days in milliseconds
+        const val DATA_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+
+        // SharedFlow for live updates to UI
+        private val _currentSpeed = MutableStateFlow(0f)
+        val currentSpeed = _currentSpeed.asStateFlow()
+
+        private val _currentTripIdFlow = MutableStateFlow<Long?>(null)
+        val currentTripIdFlow = _currentTripIdFlow.asStateFlow()
+
+        private val _isTracking = MutableStateFlow(false)
+        val isTracking = _isTracking.asStateFlow()
+
+        private val _isMovingFlow = MutableStateFlow(false)
+        val isMovingFlow = _isMovingFlow.asStateFlow()
+
+        private val _currentLocation = MutableStateFlow<Location?>(null)
+        val currentLocation = _currentLocation.asStateFlow()
+
+        fun start(context: Context) {
+            val intent = Intent(context, LocationTrackingService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, LocationTrackingService::class.java)
+            context.stopService(intent)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        db = (application as CarTrackerApp).database
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        createLocationCallback()
+
+        // Clean old data on service start
+        lifecycleScope.launch(Dispatchers.IO) {
+            cleanOldData()
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        startForeground(CarTrackerApp.TRACKING_NOTIFICATION_ID, createNotification("Monitoring for movement..."))
+        acquireWakeLock()
+        startLocationUpdates(false) // Start in passive/parked mode
+        _isTracking.value = true
+
+        // Resume active trip if exists
+        lifecycleScope.launch(Dispatchers.IO) {
+            val activeTrip = db.tripDao().getActiveTrip()
+            if (activeTrip != null) {
+                currentTripId = activeTrip.id
+                _currentTripIdFlow.value = activeTrip.id
+                totalDistance = activeTrip.distanceMeters
+                val pointCountVal = db.locationPointDao().getPointCountForTrip(activeTrip.id)
+                pointCount = pointCountVal
+                isMoving = true
+                _isMovingFlow.value = true
+                startLocationUpdates(true)
+                updateNotification("Tracking trip #${activeTrip.id}")
+            }
+        }
+
+        return START_STICKY // Restart if killed
+    }
+
+    private fun createLocationCallback() {
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                for (location in result.locations) {
+                    processLocation(location)
+                }
+            }
+        }
+    }
+
+    private fun processLocation(location: Location) {
+        val speedKmh = location.speed * 3.6f // m/s to km/h
+        _currentSpeed.value = speedKmh
+        _currentLocation.value = location
+
+        if (isMoving) {
+            // Currently on a trip
+            if (speedKmh < PARKING_SPEED_THRESHOLD) {
+                // Speed dropped - might be parking
+                if (stationaryStartTime == 0L) {
+                    stationaryStartTime = System.currentTimeMillis()
+                } else if (System.currentTimeMillis() - stationaryStartTime > PARKING_TIMEOUT_MS) {
+                    // Been stationary long enough - end trip
+                    endTrip(location)
+                    return
+                }
+            } else {
+                // Still moving - reset stationary timer
+                stationaryStartTime = 0
+            }
+
+            // Record location point
+            recordLocationPoint(location, speedKmh)
+
+        } else {
+            // Currently parked - check if starting to move
+            if (speedKmh >= PARKING_SPEED_THRESHOLD) {
+                startTrip(location, speedKmh)
+            }
+        }
+    }
+
+    private fun startTrip(location: Location, speedKmh: Float) {
+        Log.d(TAG, "Starting new trip at speed: $speedKmh km/h")
+        isMoving = true
+        _isMovingFlow.value = true
+        stationaryStartTime = 0
+        totalDistance = 0.0
+        pointCount = 0
+        speedSum = 0f
+        lastLocation = null
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val trip = Trip(
+                startTime = System.currentTimeMillis(),
+                isActive = true
+            )
+            val tripId = db.tripDao().insert(trip)
+            currentTripId = tripId
+            _currentTripIdFlow.value = tripId
+
+            recordLocationPoint(location, speedKmh)
+
+            withContext(Dispatchers.Main) {
+                startLocationUpdates(true)
+                updateNotification("Tracking trip #$tripId - ${String.format("%.0f", speedKmh)} km/h")
+            }
+        }
+    }
+
+    private fun endTrip(location: Location) {
+        Log.d(TAG, "Ending trip #$currentTripId")
+        val tripId = currentTripId ?: return
+
+        isMoving = false
+        _isMovingFlow.value = false
+        stationaryStartTime = 0
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val trip = db.tripDao().getTripById(tripId) ?: return@launch
+            val maxSpeed = db.locationPointDao().getMaxSpeedForTrip(tripId) ?: 0f
+            val avgSpeed = db.locationPointDao().getAvgSpeedForTrip(tripId) ?: 0f
+            val now = System.currentTimeMillis()
+
+            db.tripDao().update(
+                trip.copy(
+                    endTime = now,
+                    distanceMeters = totalDistance,
+                    maxSpeedKmh = maxSpeed,
+                    avgSpeedKmh = avgSpeed,
+                    durationMillis = now - trip.startTime,
+                    isActive = false
+                )
+            )
+
+            currentTripId = null
+            _currentTripIdFlow.value = null
+
+            withContext(Dispatchers.Main) {
+                startLocationUpdates(false) // Switch to passive mode
+                updateNotification("Parked - Monitoring for movement...")
+            }
+        }
+    }
+
+    private fun recordLocationPoint(location: Location, speedKmh: Float) {
+        val tripId = currentTripId ?: return
+
+        // Calculate distance from last point
+        lastLocation?.let { last ->
+            totalDistance += last.distanceTo(location).toDouble()
+        }
+        lastLocation = location
+        pointCount++
+        speedSum += speedKmh
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val point = LocationPoint(
+                tripId = tripId,
+                latitude = location.latitude,
+                longitude = location.longitude,
+                speed = location.speed,
+                speedKmh = speedKmh,
+                altitude = location.altitude,
+                bearing = location.bearing,
+                accuracy = location.accuracy,
+                timestamp = System.currentTimeMillis()
+            )
+            db.locationPointDao().insert(point)
+
+            // Update trip distance periodically
+            if (pointCount % 10 == 0) {
+                val trip = db.tripDao().getTripById(tripId)
+                trip?.let {
+                    val avgSpeed = if (pointCount > 0) speedSum / pointCount else 0f
+                    db.tripDao().update(it.copy(
+                        distanceMeters = totalDistance,
+                        avgSpeedKmh = avgSpeed,
+                        maxSpeedKmh = maxOf(it.maxSpeedKmh, speedKmh),
+                        durationMillis = System.currentTimeMillis() - it.startTime
+                    ))
+                }
+            }
+        }
+
+        // Update notification with current speed
+        updateNotification("Trip #$tripId - ${String.format("%.0f", speedKmh)} km/h | ${String.format("%.1f", totalDistance / 1000)} km")
+    }
+
+    @Suppress("MissingPermission")
+    private fun startLocationUpdates(activeMode: Boolean) {
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+
+        val request = LocationRequest.Builder(
+            if (activeMode) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
+        ).apply {
+            setMinUpdateIntervalMillis(if (activeMode) FASTEST_INTERVAL_MS else ACTIVE_INTERVAL_MS)
+            setWaitForAccurateLocation(false)
+        }.build()
+
+        try {
+            fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Location permission not granted", e)
+        }
+    }
+
+    private fun createNotification(text: String): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CarTrackerApp.TRACKING_CHANNEL_ID)
+            .setContentTitle("Car Tracker")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_car)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
+    private fun updateNotification(text: String) {
+        val notification = createNotification(text)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(CarTrackerApp.TRACKING_NOTIFICATION_ID, notification)
+    }
+
+    private fun acquireWakeLock() {
+        wakeLock?.release()
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "CarTracker::LocationTracking"
+        ).apply {
+            acquire(TimeUnit.DAYS.toMillis(365)) // Long-running
+        }
+    }
+
+    private suspend fun cleanOldData() {
+        val cutoff = System.currentTimeMillis() - DATA_RETENTION_MS
+        db.tripDao().deleteOlderThan(cutoff)
+        db.locationPointDao().deleteOlderThan(cutoff)
+        Log.d(TAG, "Cleaned data older than 30 days")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        wakeLock?.release()
+        _isTracking.value = false
+        _isMovingFlow.value = false
+
+        // End any active trip
+        currentTripId?.let { tripId ->
+            runBlocking(Dispatchers.IO) {
+                val trip = db.tripDao().getTripById(tripId)
+                trip?.let {
+                    db.tripDao().update(it.copy(
+                        endTime = System.currentTimeMillis(),
+                        isActive = false,
+                        distanceMeters = totalDistance,
+                        durationMillis = System.currentTimeMillis() - it.startTime
+                    ))
+                }
+            }
+        }
+    }
+}
