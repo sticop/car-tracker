@@ -4,7 +4,9 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.preference.PreferenceManager
 import com.cartracker.app.data.AppDatabase
+import org.osmdroid.config.Configuration
 
 class CarTrackerApp : Application() {
 
@@ -12,6 +14,15 @@ class CarTrackerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Initialize osmdroid BEFORE any MapView is created
+        Configuration.getInstance().apply {
+            load(this@CarTrackerApp, PreferenceManager.getDefaultSharedPreferences(this@CarTrackerApp))
+            userAgentValue = packageName
+            osmdroidBasePath = filesDir
+            osmdroidTileCache = java.io.File(cacheDir, "osmdroid")
+        }
+
         createNotificationChannels()
     }
 

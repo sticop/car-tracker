@@ -1,6 +1,7 @@
 package com.cartracker.app.ui.screens
 
 import android.graphics.Paint
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -16,20 +17,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.TimeFilter
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
-import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
@@ -52,24 +52,20 @@ fun MapScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Configure osmdroid
-    LaunchedEffect(Unit) {
-        Configuration.getInstance().apply {
-            userAgentValue = context.packageName
-            osmdroidBasePath = context.filesDir
-            osmdroidTileCache = context.cacheDir
-        }
-    }
-
-    // Remember the MapView
+    // Create MapView - osmdroid is already configured in CarTrackerApp.onCreate()
     val mapView = remember {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            setBuiltInZoomControls(false)
             controller.setZoom(15.0)
+            // Default to a sensible location (center of the world)
+            controller.setCenter(GeoPoint(48.8566, 2.3522)) // Paris as default
             zoomController.setVisibility(
                 org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER
             )
+            // Enable hardware acceleration for smooth tiles
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
         }
     }
 
@@ -316,9 +312,12 @@ fun MapScreen(viewModel: MainViewModel) {
         // Re-center button
         FloatingActionButton(
             onClick = {
-                currentLocation?.let { loc ->
+                val loc = currentLocation
+                if (loc != null) {
                     mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
-                    mapView.controller.setZoom(15.0)
+                    mapView.controller.setZoom(16.0)
+                } else {
+                    Toast.makeText(context, "Waiting for GPS location...", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow HTTP for OpenStreetMap tile servers -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">tile.openstreetmap.org</domain>
+        <domain includeSubdomains="true">openstreetmap.org</domain>
+    </domain-config>
+</network-security-config>
