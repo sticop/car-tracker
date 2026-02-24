@@ -49,18 +49,28 @@ class LocationTrackingService : LifecycleService() {
         override fun onProviderDisabled(provider: String) {}
     }
 
+    // Counter for consecutive high-speed readings needed to start a trip
+    private var consecutiveMovingCount = 0
+
     companion object {
         private const val TAG = "LocationTrackingService"
 
         // Speed threshold: below this = considered parked (km/h)
-        private const val PARKING_SPEED_THRESHOLD = 3.0f
+        // Set to 8 km/h to avoid GPS noise triggering false trips
+        private const val PARKING_SPEED_THRESHOLD = 8.0f
+
+        // Number of consecutive above-threshold readings needed to start trip
+        private const val REQUIRED_MOVING_COUNT = 3
+
+        // Minimum GPS accuracy to trust speed readings (meters)
+        private const val MIN_ACCURACY_METERS = 30f
 
         // Time stationary before ending trip (milliseconds) - 2 minutes
         private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
 
         // Location update intervals
         private const val ACTIVE_INTERVAL_MS = 3000L       // 3 seconds when moving
-        private const val PASSIVE_INTERVAL_MS = 15000L      // 15 seconds when parked (battery save)
+        private const val PASSIVE_INTERVAL_MS = 5000L       // 5 seconds when parked
         private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
 
         // Data retention: 30 days in milliseconds
@@ -108,10 +118,41 @@ class LocationTrackingService : LifecycleService() {
         }
     }
 
+    @Suppress("MissingPermission")
+    private fun getLastKnownLocation() {
+        try {
+            // Try GPS first, then network
+            val gpsLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val netLoc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+
+            // Use the most recent one
+            val bestLoc = when {
+                gpsLoc != null && netLoc != null -> {
+                    if (gpsLoc.time > netLoc.time) gpsLoc else netLoc
+                }
+                gpsLoc != null -> gpsLoc
+                netLoc != null -> netLoc
+                else -> null
+            }
+
+            bestLoc?.let {
+                Log.d(TAG, "Last known location: ${it.latitude}, ${it.longitude} (accuracy: ${it.accuracy}m)")
+                _currentLocation.value = it
+                // Don't process speed from last known - it could be stale
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Cannot get last known location", e)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         startForeground(CarTrackerApp.TRACKING_NOTIFICATION_ID, createNotification("Monitoring for movement..."))
         acquireWakeLock()
+
+        // Get last known location immediately so the UI has something to show
+        getLastKnownLocation()
+
         startLocationUpdates(false) // Start in passive/parked mode
         _isTracking.value = true
 
@@ -138,12 +179,25 @@ class LocationTrackingService : LifecycleService() {
 
     private fun processLocation(location: Location) {
         val speedKmh = location.speed * 3.6f // m/s to km/h
-        _currentSpeed.value = speedKmh
+
+        // Always update current location for the map, regardless of accuracy
         _currentLocation.value = location
+
+        // Filter out inaccurate readings for speed/trip logic
+        if (location.accuracy > MIN_ACCURACY_METERS) {
+            Log.d(TAG, "Ignoring inaccurate location: accuracy=${location.accuracy}m, speed=$speedKmh km/h")
+            // Still update speed display but don't use for trip logic
+            _currentSpeed.value = speedKmh
+            return
+        }
+
+        // Only trust speed if the location has speed data (hasSpeed)
+        val reliableSpeed = if (location.hasSpeed()) speedKmh else 0f
+        _currentSpeed.value = reliableSpeed
 
         if (isMoving) {
             // Currently on a trip
-            if (speedKmh < PARKING_SPEED_THRESHOLD) {
+            if (reliableSpeed < PARKING_SPEED_THRESHOLD) {
                 // Speed dropped - might be parking
                 if (stationaryStartTime == 0L) {
                     stationaryStartTime = System.currentTimeMillis()
@@ -158,12 +212,24 @@ class LocationTrackingService : LifecycleService() {
             }
 
             // Record location point
-            recordLocationPoint(location, speedKmh)
+            recordLocationPoint(location, reliableSpeed)
 
         } else {
             // Currently parked - check if starting to move
-            if (speedKmh >= PARKING_SPEED_THRESHOLD) {
-                startTrip(location, speedKmh)
+            // Require multiple consecutive readings above threshold to avoid GPS jitter
+            if (reliableSpeed >= PARKING_SPEED_THRESHOLD) {
+                consecutiveMovingCount++
+                Log.d(TAG, "Movement detected: $reliableSpeed km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
+                if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
+                    consecutiveMovingCount = 0
+                    startTrip(location, reliableSpeed)
+                }
+            } else {
+                // Reset counter if speed drops below threshold
+                if (consecutiveMovingCount > 0) {
+                    Log.d(TAG, "Movement reset: speed dropped to $reliableSpeed km/h")
+                }
+                consecutiveMovingCount = 0
             }
         }
     }
@@ -281,7 +347,11 @@ class LocationTrackingService : LifecycleService() {
         locationManager.removeUpdates(locationListener)
 
         val intervalMs = if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
-        val minDistance = if (activeMode) 1f else 5f // meters
+        // Use 0 min distance in passive mode so we get updates even when stationary
+        // This ensures the app gets a location fix for the map
+        val minDistance = if (activeMode) 1f else 0f
+
+        Log.d(TAG, "Starting location updates: activeMode=$activeMode interval=${intervalMs}ms minDist=${minDistance}m")
 
         // Try GPS provider first, then network as fallback
         try {
@@ -293,6 +363,9 @@ class LocationTrackingService : LifecycleService() {
                     locationListener,
                     Looper.getMainLooper()
                 )
+                Log.d(TAG, "GPS provider registered")
+            } else {
+                Log.w(TAG, "GPS provider not available")
             }
 
             // Also request network updates as supplement
@@ -300,10 +373,13 @@ class LocationTrackingService : LifecycleService() {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
                     intervalMs * 2, // less frequent for network
-                    minDistance * 3,
+                    minDistance,
                     locationListener,
                     Looper.getMainLooper()
                 )
+                Log.d(TAG, "Network provider registered")
+            } else {
+                Log.w(TAG, "Network provider not available")
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Location permission not granted", e)
