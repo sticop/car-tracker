@@ -1,8 +1,7 @@
 package com.cartracker.app.ui.screens
 
-import androidx.compose.animation.*
+import android.graphics.Paint
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,20 +15,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.TimeFilter
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.*
-import com.google.maps.android.compose.*
-import kotlinx.coroutines.launch
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,91 +49,111 @@ fun MapScreen(viewModel: MainViewModel) {
     val selectedTripWithPoints by viewModel.selectedTripWithPoints.collectAsState()
     val allPoints by viewModel.allPointsInRange.collectAsState()
 
-    val cameraPositionState = rememberCameraPositionState()
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Auto-center on current location
-    LaunchedEffect(currentLocation) {
-        currentLocation?.let { loc ->
-            if (selectedTripId == null) {
-                cameraPositionState.animate(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(loc.latitude, loc.longitude),
-                        15f
-                    ),
-                    durationMs = 1000
-                )
-            }
+    // Configure osmdroid
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().apply {
+            userAgentValue = context.packageName
+            osmdroidBasePath = context.filesDir
+            osmdroidTileCache = context.cacheDir
         }
     }
 
-    // Center on selected trip
-    LaunchedEffect(selectedTripWithPoints) {
-        selectedTripWithPoints?.let { tripData ->
-            if (tripData.points.isNotEmpty()) {
-                val bounds = LatLngBounds.builder()
-                tripData.points.forEach { point ->
-                    bounds.include(LatLng(point.latitude, point.longitude))
-                }
-                cameraPositionState.animate(
-                    CameraUpdateFactory.newLatLngBounds(bounds.build(), 100),
-                    durationMs = 1000
-                )
-            }
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Google Map
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = MapProperties(
-                mapType = MapType.NORMAL,
-                isMyLocationEnabled = false
-            ),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                myLocationButtonEnabled = false,
-                mapToolbarEnabled = false
+    // Remember the MapView
+    val mapView = remember {
+        MapView(context).apply {
+            setTileSource(TileSourceFactory.MAPNIK)
+            setMultiTouchControls(true)
+            controller.setZoom(15.0)
+            zoomController.setVisibility(
+                org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER
             )
-        ) {
-            // Draw routes
-            if (selectedTripId != null) {
-                // Show selected trip route with speed-colored segments
-                selectedTripWithPoints?.let { tripData ->
-                    DrawSpeedColoredRoute(tripData.points)
-                    DrawTripMarkers(tripData.trip, tripData.points)
-                }
-            } else {
-                // Show all trips in range with different colors
-                val tripColors = listOf(
-                    Color(0xFF2196F3), Color(0xFF4CAF50), Color(0xFFFF9800),
-                    Color(0xFF9C27B0), Color(0xFFE91E63), Color(0xFF00BCD4)
-                )
-                // Group points by trip
-                val pointsByTrip = allPoints.groupBy { it.tripId }
-                pointsByTrip.entries.forEachIndexed { index, (_, points) ->
-                    if (points.size >= 2) {
-                        val color = tripColors[index % tripColors.size]
-                        Polyline(
-                            points = points.map { LatLng(it.latitude, it.longitude) },
-                            color = color,
-                            width = 8f
-                        )
+        }
+    }
+
+    // Manage MapView lifecycle
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onDetach()
+        }
+    }
+
+    // Update map when data changes
+    LaunchedEffect(currentLocation, selectedTripWithPoints, allPoints, selectedTripId) {
+        mapView.overlays.clear()
+
+        if (selectedTripId != null) {
+            // Show selected trip with speed-colored segments
+            selectedTripWithPoints?.let { tripData ->
+                drawSpeedColoredRoute(mapView, tripData.points)
+                drawTripMarkers(mapView, tripData.trip, tripData.points)
+
+                // Zoom to fit trip
+                if (tripData.points.isNotEmpty()) {
+                    val boundingBox = getBoundingBox(tripData.points)
+                    mapView.post {
+                        mapView.zoomToBoundingBox(boundingBox, true, 100)
                     }
                 }
             }
-
-            // Current location marker
-            currentLocation?.let { loc ->
-                Marker(
-                    state = MarkerState(position = LatLng(loc.latitude, loc.longitude)),
-                    title = if (isMoving) "Moving: ${FormatUtils.formatSpeed(currentSpeed)}" else "Parked",
-                    snippet = "Current Location"
-                )
+        } else {
+            // Show all trips in range with different colors
+            val tripColors = listOf(
+                0xFF2196F3.toInt(), 0xFF4CAF50.toInt(), 0xFFFF9800.toInt(),
+                0xFF9C27B0.toInt(), 0xFFE91E63.toInt(), 0xFF00BCD4.toInt()
+            )
+            val pointsByTrip = allPoints.groupBy { it.tripId }
+            pointsByTrip.entries.forEachIndexed { index, (_, points) ->
+                if (points.size >= 2) {
+                    val color = tripColors[index % tripColors.size]
+                    val polyline = Polyline().apply {
+                        outlinePaint.color = color
+                        outlinePaint.strokeWidth = 8f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                        outlinePaint.isAntiAlias = true
+                        setPoints(points.map { GeoPoint(it.latitude, it.longitude) })
+                    }
+                    mapView.overlays.add(polyline)
+                }
             }
         }
+
+        // Current location marker
+        currentLocation?.let { loc ->
+            val marker = Marker(mapView).apply {
+                position = GeoPoint(loc.latitude, loc.longitude)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = if (isMoving) "Moving: ${FormatUtils.formatSpeed(currentSpeed)}" else "Parked"
+                snippet = "Current Location"
+            }
+            mapView.overlays.add(marker)
+
+            // Auto-center if no trip is selected
+            if (selectedTripId == null) {
+                mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
+            }
+        }
+
+        mapView.invalidate()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // OSM Map
+        AndroidView(
+            factory = { mapView },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // Top overlay - Speed indicator
         Column(
@@ -291,15 +317,8 @@ fun MapScreen(viewModel: MainViewModel) {
         FloatingActionButton(
             onClick = {
                 currentLocation?.let { loc ->
-                    scope.launch {
-                        cameraPositionState.animate(
-                            CameraUpdateFactory.newLatLngZoom(
-                                LatLng(loc.latitude, loc.longitude),
-                                15f
-                            ),
-                            durationMs = 500
-                        )
-                    }
+                    mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
+                    mapView.controller.setZoom(15.0)
                 }
             },
             modifier = Modifier
@@ -312,61 +331,90 @@ fun MapScreen(viewModel: MainViewModel) {
     }
 }
 
-@Composable
-fun DrawSpeedColoredRoute(points: List<LocationPoint>) {
+private fun drawSpeedColoredRoute(mapView: MapView, points: List<LocationPoint>) {
     if (points.size < 2) return
 
-    // Draw polyline segments colored by speed
     for (i in 0 until points.size - 1) {
         val start = points[i]
         val end = points[i + 1]
         val avgSpeed = (start.speedKmh + end.speedKmh) / 2
 
-        Polyline(
-            points = listOf(
-                LatLng(start.latitude, start.longitude),
-                LatLng(end.latitude, end.longitude)
-            ),
-            color = Color(SpeedColorUtils.getColorForSpeed(avgSpeed)),
-            width = 10f
-        )
+        val polyline = Polyline().apply {
+            outlinePaint.color = SpeedColorUtils.getColorForSpeed(avgSpeed)
+            outlinePaint.strokeWidth = 10f
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+            outlinePaint.isAntiAlias = true
+            setPoints(
+                listOf(
+                    GeoPoint(start.latitude, start.longitude),
+                    GeoPoint(end.latitude, end.longitude)
+                )
+            )
+        }
+        mapView.overlays.add(polyline)
     }
 }
 
-@Composable
-fun DrawTripMarkers(trip: Trip, points: List<LocationPoint>) {
+private fun drawTripMarkers(mapView: MapView, trip: Trip, points: List<LocationPoint>) {
     if (points.isEmpty()) return
 
     // Start marker
     val startPoint = points.first()
-    Marker(
-        state = MarkerState(position = LatLng(startPoint.latitude, startPoint.longitude)),
-        title = "Start",
-        snippet = FormatUtils.formatDateTime(trip.startTime),
-        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
-    )
+    val startMarker = Marker(mapView).apply {
+        position = GeoPoint(startPoint.latitude, startPoint.longitude)
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        title = "Start"
+        snippet = FormatUtils.formatDateTime(trip.startTime)
+    }
+    mapView.overlays.add(startMarker)
 
     // End marker (if trip is finished)
     if (!trip.isActive && points.size > 1) {
         val endPoint = points.last()
-        Marker(
-            state = MarkerState(position = LatLng(endPoint.latitude, endPoint.longitude)),
-            title = "End",
-            snippet = trip.endTime?.let { FormatUtils.formatDateTime(it) } ?: "",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
-        )
+        val endMarker = Marker(mapView).apply {
+            position = GeoPoint(endPoint.latitude, endPoint.longitude)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            title = "End"
+            snippet = trip.endTime?.let { FormatUtils.formatDateTime(it) } ?: ""
+        }
+        mapView.overlays.add(endMarker)
     }
 
     // Max speed marker
     val maxSpeedPoint = points.maxByOrNull { it.speedKmh }
     maxSpeedPoint?.let { point ->
-        if (point.speedKmh > 10) { // Only show if significant speed
-            Marker(
-                state = MarkerState(position = LatLng(point.latitude, point.longitude)),
-                title = "Max Speed: ${FormatUtils.formatSpeed(point.speedKmh)}",
-                snippet = FormatUtils.formatDateTime(point.timestamp),
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE)
-            )
+        if (point.speedKmh > 10) {
+            val maxMarker = Marker(mapView).apply {
+                position = GeoPoint(point.latitude, point.longitude)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "Max Speed: ${FormatUtils.formatSpeed(point.speedKmh)}"
+                snippet = FormatUtils.formatDateTime(point.timestamp)
+            }
+            mapView.overlays.add(maxMarker)
         }
     }
+}
+
+private fun getBoundingBox(points: List<LocationPoint>): BoundingBox {
+    var minLat = Double.MAX_VALUE
+    var maxLat = -Double.MAX_VALUE
+    var minLon = Double.MAX_VALUE
+    var maxLon = -Double.MAX_VALUE
+
+    points.forEach { point ->
+        if (point.latitude < minLat) minLat = point.latitude
+        if (point.latitude > maxLat) maxLat = point.latitude
+        if (point.longitude < minLon) minLon = point.longitude
+        if (point.longitude > maxLon) maxLon = point.longitude
+    }
+
+    val latPadding = (maxLat - minLat) * 0.1
+    val lonPadding = (maxLon - minLon) * 0.1
+
+    return BoundingBox(
+        maxLat + latPadding,
+        maxLon + lonPadding,
+        minLat - latPadding,
+        minLon - lonPadding
+    )
 }

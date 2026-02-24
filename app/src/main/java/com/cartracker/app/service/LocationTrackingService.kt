@@ -4,6 +4,8 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -15,7 +17,6 @@ import com.cartracker.app.data.AppDatabase
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.ui.MainActivity
-import com.google.android.gms.location.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,8 +24,7 @@ import java.util.concurrent.TimeUnit
 
 class LocationTrackingService : LifecycleService() {
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
+    private lateinit var locationManager: LocationManager
     private lateinit var db: AppDatabase
 
     private var currentTripId: Long? = null
@@ -37,6 +37,17 @@ class LocationTrackingService : LifecycleService() {
 
     // Wake lock to keep tracking in background
     private var wakeLock: PowerManager.WakeLock? = null
+
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            processLocation(location)
+        }
+
+        @Deprecated("Deprecated in API level 29")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
 
     companion object {
         private const val TAG = "LocationTrackingService"
@@ -89,8 +100,7 @@ class LocationTrackingService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         db = (application as CarTrackerApp).database
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        createLocationCallback()
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         // Clean old data on service start
         lifecycleScope.launch(Dispatchers.IO) {
@@ -116,22 +126,14 @@ class LocationTrackingService : LifecycleService() {
                 pointCount = pointCountVal
                 isMoving = true
                 _isMovingFlow.value = true
-                startLocationUpdates(true)
-                updateNotification("Tracking trip #${activeTrip.id}")
+                withContext(Dispatchers.Main) {
+                    startLocationUpdates(true)
+                    updateNotification("Tracking trip #${activeTrip.id}")
+                }
             }
         }
 
         return START_STICKY // Restart if killed
-    }
-
-    private fun createLocationCallback() {
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                for (location in result.locations) {
-                    processLocation(location)
-                }
-            }
-        }
     }
 
     private fun processLocation(location: Location) {
@@ -147,7 +149,7 @@ class LocationTrackingService : LifecycleService() {
                     stationaryStartTime = System.currentTimeMillis()
                 } else if (System.currentTimeMillis() - stationaryStartTime > PARKING_TIMEOUT_MS) {
                     // Been stationary long enough - end trip
-                    endTrip(location)
+                    endTrip()
                     return
                 }
             } else {
@@ -194,7 +196,7 @@ class LocationTrackingService : LifecycleService() {
         }
     }
 
-    private fun endTrip(location: Location) {
+    private fun endTrip() {
         Log.d(TAG, "Ending trip #$currentTripId")
         val tripId = currentTripId ?: return
 
@@ -275,18 +277,34 @@ class LocationTrackingService : LifecycleService() {
 
     @Suppress("MissingPermission")
     private fun startLocationUpdates(activeMode: Boolean) {
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        // Remove previous updates
+        locationManager.removeUpdates(locationListener)
 
-        val request = LocationRequest.Builder(
-            if (activeMode) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-            if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
-        ).apply {
-            setMinUpdateIntervalMillis(if (activeMode) FASTEST_INTERVAL_MS else ACTIVE_INTERVAL_MS)
-            setWaitForAccurateLocation(false)
-        }.build()
+        val intervalMs = if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
+        val minDistance = if (activeMode) 1f else 5f // meters
 
+        // Try GPS provider first, then network as fallback
         try {
-            fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    intervalMs,
+                    minDistance,
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+            }
+
+            // Also request network updates as supplement
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    intervalMs * 2, // less frequent for network
+                    minDistance * 3,
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+            }
         } catch (e: SecurityException) {
             Log.e(TAG, "Location permission not granted", e)
         }
@@ -337,7 +355,7 @@ class LocationTrackingService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        locationManager.removeUpdates(locationListener)
         wakeLock?.release()
         _isTracking.value = false
         _isMovingFlow.value = false

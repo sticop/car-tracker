@@ -1,7 +1,5 @@
 package com.cartracker.app.util
 
-import com.google.android.gms.maps.model.LatLng
-
 object SpeedColorUtils {
     // Returns a color based on speed (green -> yellow -> orange -> red)
     fun getColorForSpeed(speedKmh: Float): Int {

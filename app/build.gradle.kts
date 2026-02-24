@@ -69,10 +69,8 @@ dependencies {
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")
 
-    // Google Maps
-    implementation("com.google.maps.android:maps-compose:4.1.1")
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.android.gms:play-services-location:21.0.1")
+    // OpenStreetMap (no API key required)
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
 
     // Room Database
     implementation("androidx.room:room-runtime:2.6.1")
@@ -81,7 +79,7 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    // removed play-services coroutines (no longer needed)
 
     // WorkManager for periodic cleanup
     implementation("androidx.work:work-runtime-ktx:2.9.0")

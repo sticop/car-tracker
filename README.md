@@ -6,7 +6,7 @@ An Android app that tracks your car's movement, speed, and routes with GPS preci
 
 - **Real-time GPS tracking** with speed monitoring
 - **Automatic trip detection** - starts recording when you drive, stops when parked
-- **Speed-colored routes** on Google Maps (green=slow, yellow=moderate, red=fast)
+- **Speed-colored routes** on OpenStreetMap (green=slow, yellow=moderate, red=fast) - no API key needed
 - **Trip history** with filtering (1h, 6h, 24h, 3 days, 7 days, 30 days)
 - **Live speedometer dashboard** with animated gauge
 - **Speed evidence log** - prove your actual speed during traffic stops
@@ -18,16 +18,16 @@ An Android app that tracks your car's movement, speed, and routes with GPS preci
 ## Architecture
 
 - **Kotlin** with Jetpack Compose for UI
-- **Google Maps** for route visualization
+- **OpenStreetMap (osmdroid)** for route visualization - no API key required
 - **Room Database** for offline data storage
 - **Foreground Service** for reliable background tracking
 - **MVVM** architecture with StateFlow
 
 ## Setup
 
-1. Get a Google Maps API key from [Google Cloud Console](https://console.cloud.google.com/)
-2. Replace `YOUR_GOOGLE_MAPS_API_KEY` in `AndroidManifest.xml`
-3. Build and install on your Android tablet
+1. Clone the repository
+2. Build and install on your Android tablet
+3. No API keys needed - uses free OpenStreetMap tiles
 
 ## How It Works
 
