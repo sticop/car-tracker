@@ -1,6 +1,9 @@
 package com.cartracker.app.ui.screens
 
+import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Point
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -35,6 +38,7 @@ import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,15 +129,15 @@ fun MapScreen(viewModel: MainViewModel) {
             }
         }
 
-        // Current location marker
+        // Current location - high precision GPS overlay
         currentLocation?.let { loc ->
-            val marker = Marker(mapView).apply {
-                position = GeoPoint(loc.latitude, loc.longitude)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = if (isMoving) "Moving: ${FormatUtils.formatSpeed(currentSpeed)}" else "Parked"
-                snippet = "Current Location"
-            }
-            mapView.overlays.add(marker)
+            val gpsOverlay = MyLocationOverlay(
+                geoPoint = GeoPoint(loc.latitude, loc.longitude),
+                accuracyMeters = loc.accuracy,
+                bearing = if (loc.hasBearing()) loc.bearing else null,
+                isMoving = isMoving
+            )
+            mapView.overlays.add(gpsOverlay)
 
             // Auto-center if no trip is selected
             if (selectedTripId == null) {
@@ -416,4 +420,123 @@ private fun getBoundingBox(points: List<LocationPoint>): BoundingBox {
         minLat - latPadding,
         minLon - lonPadding
     )
+}
+
+/**
+ * High-precision GPS location overlay.
+ * Draws a blue dot with accuracy circle, bearing arrow when moving,
+ * and a subtle outer glow — similar to Google Maps "my location" indicator.
+ */
+private class MyLocationOverlay(
+    private val geoPoint: GeoPoint,
+    private val accuracyMeters: Float,
+    private val bearing: Float?,
+    private val isMoving: Boolean
+) : Overlay() {
+
+    // Accuracy circle fill
+    private val accuracyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x182196F3 // very transparent blue
+        style = Paint.Style.FILL
+    }
+
+    // Accuracy circle border
+    private val accuracyBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x602196F3 // semi-transparent blue
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+
+    // Outer glow ring
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x402196F3
+        style = Paint.Style.FILL
+    }
+
+    // White border of the dot
+    private val dotBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = Paint.Style.FILL
+    }
+
+    // Blue center dot
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF2196F3.toInt()
+        style = Paint.Style.FILL
+    }
+
+    // Moving dot is green
+    private val dotMovingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF4CAF50.toInt()
+        style = Paint.Style.FILL
+    }
+
+    // Bearing arrow paint
+    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF2196F3.toInt()
+        style = Paint.Style.FILL
+    }
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow) return
+
+        val projection = mapView.projection
+        val screenPoint = Point()
+        projection.toPixels(geoPoint, screenPoint)
+
+        val x = screenPoint.x.toFloat()
+        val y = screenPoint.y.toFloat()
+
+        // Calculate accuracy radius in pixels
+        val zoomLevel = mapView.zoomLevelDouble
+        val latRad = Math.toRadians(geoPoint.latitude)
+        val metersPerPixel = 156543.03392 * Math.cos(latRad) / Math.pow(2.0, zoomLevel)
+        val accuracyRadiusPx = if (metersPerPixel > 0) {
+            (accuracyMeters / metersPerPixel).toFloat()
+        } else {
+            0f
+        }
+
+        // Draw accuracy circle (only if meaningful size)
+        if (accuracyRadiusPx > 20f) {
+            canvas.drawCircle(x, y, accuracyRadiusPx, accuracyPaint)
+            canvas.drawCircle(x, y, accuracyRadiusPx, accuracyBorderPaint)
+        }
+
+        // Draw bearing arrow when moving and bearing is available
+        if (isMoving && bearing != null) {
+            canvas.save()
+            canvas.rotate(bearing, x, y)
+
+            val arrowPath = Path().apply {
+                // Pointing up arrow (north = 0°)
+                moveTo(x, y - 36f)      // tip
+                lineTo(x - 14f, y + 8f) // bottom left
+                lineTo(x, y - 2f)       // inner notch
+                lineTo(x + 14f, y + 8f) // bottom right
+                close()
+            }
+            arrowPaint.color = if (isMoving) 0xFF4CAF50.toInt() else 0xFF2196F3.toInt()
+            canvas.drawPath(arrowPath, arrowPaint)
+
+            canvas.restore()
+        }
+
+        // Draw outer glow
+        canvas.drawCircle(x, y, 18f, glowPaint)
+
+        // Draw white border (outer ring of dot)
+        canvas.drawCircle(x, y, 14f, dotBorderPaint)
+
+        // Draw center dot
+        val centerPaint = if (isMoving) dotMovingPaint else dotPaint
+        canvas.drawCircle(x, y, 11f, centerPaint)
+
+        // Draw inner highlight (gives 3D look)
+        val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x40FFFFFF
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(x - 3f, y - 3f, 5f, highlightPaint)
+    }
 }
