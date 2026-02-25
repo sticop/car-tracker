@@ -59,6 +59,8 @@ fun MapScreen(viewModel: MainViewModel) {
 
     // Track network status for offline indicator
     val isOnline = remember { mutableStateOf(OfflineTileManager.isNetworkAvailable(context)) }
+    // Track whether we've centered on the user's location at least once
+    val hasCenteredOnUser = remember { mutableStateOf(false) }
 
     // Periodically check network status
     LaunchedEffect(Unit) {
@@ -92,6 +94,16 @@ fun MapScreen(viewModel: MainViewModel) {
     // Update map data connection state based on network
     LaunchedEffect(isOnline.value) {
         mapView.setUseDataConnection(isOnline.value)
+    }
+
+    // Center on user's location as soon as we get the first fix
+    LaunchedEffect(currentLocation) {
+        if (!hasCenteredOnUser.value && currentLocation != null) {
+            val loc = currentLocation!!
+            mapView.controller.setCenter(GeoPoint(loc.latitude, loc.longitude))
+            mapView.controller.setZoom(16.0)
+            hasCenteredOnUser.value = true
+        }
     }
 
     // Manage MapView lifecycle
@@ -379,6 +391,36 @@ fun MapScreen(viewModel: MainViewModel) {
                         text = "Offline - Using cached maps",
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+
+        // "Locating..." indicator when no GPS fix yet
+        if (currentLocation == null) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Locating...",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }

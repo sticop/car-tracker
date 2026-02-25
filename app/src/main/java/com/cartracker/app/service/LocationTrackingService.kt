@@ -112,6 +112,17 @@ class LocationTrackingService : LifecycleService() {
             val intent = Intent(context, LocationTrackingService::class.java)
             context.stopService(intent)
         }
+
+        /**
+         * Called from MainActivity to push a location fix directly,
+         * allowing the map to show user's position before the service fully starts.
+         */
+        fun updateLocationFromActivity(location: Location) {
+            if (_currentLocation.value == null ||
+                location.time > (_currentLocation.value?.time ?: 0)) {
+                _currentLocation.value = location
+            }
+        }
     }
 
     override fun onCreate() {
@@ -135,27 +146,62 @@ class LocationTrackingService : LifecycleService() {
             return
         }
         try {
-            // Try GPS first, then network
+            // Try ALL providers for the best chance of getting a fix
             val gpsLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val netLoc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            val passiveLoc = locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
 
-            // Use the most recent one
-            val bestLoc = when {
-                gpsLoc != null && netLoc != null -> {
-                    if (gpsLoc.time > netLoc.time) gpsLoc else netLoc
-                }
-                gpsLoc != null -> gpsLoc
-                netLoc != null -> netLoc
-                else -> null
-            }
+            // Pick the most recent location from any provider
+            val candidates = listOfNotNull(gpsLoc, netLoc, passiveLoc)
+            val bestLoc = candidates.maxByOrNull { it.time }
 
-            bestLoc?.let {
-                Log.d(TAG, "Last known location: ${it.latitude}, ${it.longitude} (accuracy: ${it.accuracy}m)")
-                _currentLocation.value = it
-                // Don't process speed from last known - it could be stale
+            if (bestLoc != null) {
+                Log.d(TAG, "Last known location: ${bestLoc.latitude}, ${bestLoc.longitude} (provider: ${bestLoc.provider}, accuracy: ${bestLoc.accuracy}m)")
+                _currentLocation.value = bestLoc
+            } else {
+                Log.w(TAG, "No last known location from any provider")
+                // Request a single immediate fix from GPS
+                requestImmediateLocationFix()
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Cannot get last known location", e)
+        }
+    }
+
+    /**
+     * Request a single immediate location fix from all available providers.
+     * This is faster than periodic updates for getting the first fix.
+     */
+    @Suppress("MissingPermission")
+    private fun requestImmediateLocationFix() {
+        Log.d(TAG, "Requesting immediate location fix...")
+        val singleUpdateListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                Log.d(TAG, "Immediate fix received: ${location.latitude}, ${location.longitude} (${location.provider})")
+                if (_currentLocation.value == null) {
+                    _currentLocation.value = location
+                }
+                // Don't remove - let periodic updates take over
+            }
+            @Deprecated("Deprecated in API level 29")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        }
+
+        try {
+            // Request from all providers for fastest possible fix
+            val providers = locationManager.getProviders(true)
+            for (provider in providers) {
+                try {
+                    locationManager.requestSingleUpdate(provider, singleUpdateListener, Looper.getMainLooper())
+                    Log.d(TAG, "Requested single update from: $provider")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cannot request single update from $provider: ${e.message}")
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied for immediate fix", e)
         }
     }
 
@@ -166,6 +212,9 @@ class LocationTrackingService : LifecycleService() {
 
         // Get last known location immediately so the UI has something to show
         getLastKnownLocation()
+
+        // Also request an immediate single fix for fastest response
+        requestImmediateLocationFix()
 
         startLocationUpdates(false) // Start in passive/parked mode
         _isTracking.value = true

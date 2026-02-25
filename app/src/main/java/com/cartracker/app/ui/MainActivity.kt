@@ -1,9 +1,15 @@
 package com.cartracker.app.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +33,9 @@ class MainActivity : ComponentActivity() {
         val coarseLocation = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
 
         if (fineLocation || coarseLocation) {
+            // Got permission - immediately try to get location
+            getQuickLocationFix()
+
             // Now request background location
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 requestBackgroundLocation()
@@ -74,6 +83,9 @@ class MainActivity : ComponentActivity() {
     private fun checkAndRequestPermissions() {
         when {
             hasLocationPermission() -> {
+                // Permission already granted - get location immediately
+                getQuickLocationFix()
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !hasBackgroundLocationPermission()) {
                     requestBackgroundLocation()
                 } else {
@@ -88,6 +100,55 @@ class MainActivity : ComponentActivity() {
                     )
                 )
             }
+        }
+    }
+
+    /**
+     * Get location fix directly from Activity (faster than waiting for service to start).
+     * Pushes the location to the service's static StateFlow so the map shows it immediately.
+     */
+    private fun getQuickLocationFix() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+
+        try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+            // Try all providers for last known location
+            val candidates = listOfNotNull(
+                lm.getLastKnownLocation(LocationManager.GPS_PROVIDER),
+                lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER),
+                lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+            )
+            val bestLoc = candidates.maxByOrNull { it.time }
+            if (bestLoc != null) {
+                Log.d("MainActivity", "Quick fix from last known: ${bestLoc.latitude}, ${bestLoc.longitude}")
+                LocationTrackingService.updateLocationFromActivity(bestLoc)
+            }
+
+            // Also request a fast single fix
+            val quickListener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    Log.d("MainActivity", "Quick single fix: ${location.latitude}, ${location.longitude}")
+                    LocationTrackingService.updateLocationFromActivity(location)
+                    lm.removeUpdates(this)
+                }
+                @Deprecated("Deprecated in API level 29")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
+            }
+
+            for (provider in lm.getProviders(true)) {
+                try {
+                    lm.requestSingleUpdate(provider, quickListener, Looper.getMainLooper())
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Quick location fix failed", e)
         }
     }
 
