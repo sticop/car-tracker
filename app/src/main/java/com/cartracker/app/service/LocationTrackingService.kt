@@ -100,9 +100,16 @@ class LocationTrackingService : LifecycleService() {
         // Number of consecutive above-threshold readings needed to start trip
         private const val REQUIRED_MOVING_COUNT = 3
 
-        // Minimum GPS accuracy to trust speed readings (meters)
+        // Minimum GPS accuracy to trust speed readings during active trip (meters)
         // Tightened to 30m — network locations (48m+) must be excluded from speed calc
         private const val MIN_ACCURACY_METERS = 30f
+
+        // Relaxed accuracy threshold for trip DETECTION when parked (meters)
+        // GPS Doppler speed is accurate to ~0.5 km/h even with poor position accuracy
+        // so we can trust hasSpeed=true from GPS even at 50m position accuracy.
+        // This prevents the 2-4 minute delay caused by GPS cold start delivering
+        // initial fixes with 40-50m accuracy that were being rejected.
+        private const val MIN_ACCURACY_TRIP_DETECTION = 50f
 
         // Minimum distance (meters) between GPS fixes to compute speed from distance
         // If distance is less than this OR less than the GPS accuracy, the movement is
@@ -127,7 +134,7 @@ class LocationTrackingService : LifecycleService() {
 
         // Location update intervals — faster for more responsive speed display
         private const val ACTIVE_INTERVAL_MS = 2000L       // 2 seconds when moving
-        private const val PASSIVE_INTERVAL_MS = 3000L       // 3 seconds when parked
+        private const val PASSIVE_INTERVAL_MS = 2000L       // 2 seconds when parked (keep GPS warm!)
         private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
 
         // Data retention: 30 days in milliseconds
@@ -372,9 +379,13 @@ class LocationTrackingService : LifecycleService() {
         )
 
         // Filter out very inaccurate readings for speed/trip logic
-        // This excludes network/cell tower locations (typically 30-50m accuracy)
-        if (location.accuracy > MIN_ACCURACY_METERS) {
-            Log.d(TAG, "Ignoring inaccurate location for speed/trip: accuracy=${location.accuracy}m (max=${MIN_ACCURACY_METERS}m)")
+        // When NOT in a trip: use relaxed threshold (50m) because GPS Doppler speed
+        // is accurate even with poor position accuracy. This prevents the 2-4 minute
+        // delay from GPS cold starts where early fixes have 40-50m accuracy.
+        // When IN a trip: use strict threshold (30m) for accurate distance tracking.
+        val accuracyThreshold = if (isMoving) MIN_ACCURACY_METERS else MIN_ACCURACY_TRIP_DETECTION
+        if (location.accuracy > accuracyThreshold) {
+            Log.d(TAG, "Ignoring inaccurate location: accuracy=${location.accuracy}m (max=${accuracyThreshold}m, moving=$isMoving)")
             return
         }
 
@@ -544,6 +555,10 @@ class LocationTrackingService : LifecycleService() {
         isMoving = false
         _isMovingFlow.value = false
         stationaryStartTime = 0
+        // Reset speed state so next trip detection starts clean
+        smoothedSpeed = 0f
+        lastValidSpeed = 0f
+        consecutiveMovingCount = 0
 
         lifecycleScope.launch(Dispatchers.IO) {
             val trip = db.tripDao().getTripById(tripId) ?: return@launch
@@ -638,9 +653,9 @@ class LocationTrackingService : LifecycleService() {
         locationManager.removeUpdates(networkLocationListener)
 
         val intervalMs = if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
-        // Use 0 min distance in passive mode so we get updates even when stationary
-        // This ensures the app gets a location fix for the map
-        val minDistance = if (activeMode) 1f else 0f
+        // Use 0 min distance in ALL modes so we get updates even when stationary
+        // This ensures GPS stays warm and doesn't lose satellite lock
+        val minDistance = 0f
 
         Log.d(TAG, "Starting location updates: activeMode=$activeMode interval=${intervalMs}ms minDist=${minDistance}m")
 
@@ -665,8 +680,8 @@ class LocationTrackingService : LifecycleService() {
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
-                    intervalMs * 3, // much less frequent — just a fallback for map
-                    50f, // only update if moved significantly
+                    intervalMs * 2, // less frequent — just a fallback for map
+                    30f, // only update if moved significantly
                     networkLocationListener,
                     Looper.getMainLooper()
                 )
