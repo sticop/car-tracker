@@ -18,9 +18,23 @@ class CarTrackerApp : Application() {
         // Initialize osmdroid BEFORE any MapView is created
         Configuration.getInstance().apply {
             load(this@CarTrackerApp, PreferenceManager.getDefaultSharedPreferences(this@CarTrackerApp))
-            userAgentValue = packageName
+            userAgentValue = "$packageName/1.0"
             osmdroidBasePath = filesDir
             osmdroidTileCache = java.io.File(cacheDir, "osmdroid")
+
+            // Offline tile caching configuration
+            // Allow large tile cache (500 MB) so tiles persist for offline use
+            tileFileSystemCacheMaxBytes = 500L * 1024 * 1024
+            tileFileSystemCacheTrimBytes = 400L * 1024 * 1024
+
+            // Keep cached tiles for 30 days
+            expirationOverrideDuration = 30L * 24 * 60 * 60 * 1000
+
+            // Extended expiration so tiles work offline even if "expired"
+            tileFileSystemCacheMaxBytes = 500L * 1024 * 1024
+
+            // Set HTTP timeouts for tile downloads
+            setHttpProxy(null) // no proxy
         }
 
         createNotificationChannels()

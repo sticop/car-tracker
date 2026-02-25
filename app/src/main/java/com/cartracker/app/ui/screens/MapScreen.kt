@@ -29,6 +29,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
+import com.cartracker.app.map.OfflineTileManager
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.TimeFilter
 import com.cartracker.app.util.FormatUtils
@@ -56,6 +57,17 @@ fun MapScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    // Track network status for offline indicator
+    val isOnline = remember { mutableStateOf(OfflineTileManager.isNetworkAvailable(context)) }
+
+    // Periodically check network status
+    LaunchedEffect(Unit) {
+        while (true) {
+            isOnline.value = OfflineTileManager.isNetworkAvailable(context)
+            kotlinx.coroutines.delay(5000)
+        }
+    }
+
     // Create MapView - osmdroid is already configured in CarTrackerApp.onCreate()
     val mapView = remember {
         MapView(context).apply {
@@ -71,7 +83,15 @@ fun MapScreen(viewModel: MainViewModel) {
             )
             // Enable hardware acceleration for smooth tiles
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+
+            // Use data connection only when online; offloads to cache when offline
+            setUseDataConnection(OfflineTileManager.isNetworkAvailable(context))
         }
+    }
+
+    // Update map data connection state based on network
+    LaunchedEffect(isOnline.value) {
+        mapView.setUseDataConnection(isOnline.value)
     }
 
     // Manage MapView lifecycle
@@ -330,6 +350,37 @@ fun MapScreen(viewModel: MainViewModel) {
                     modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.labelLarge
                 )
+            }
+        }
+
+        // Offline indicator
+        if (!isOnline.value) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFE65100).copy(alpha = 0.9f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.CloudOff,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Offline - Using cached maps",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
 

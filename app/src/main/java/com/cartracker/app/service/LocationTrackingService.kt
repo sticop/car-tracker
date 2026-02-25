@@ -16,6 +16,7 @@ import com.cartracker.app.R
 import com.cartracker.app.data.AppDatabase
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
+import com.cartracker.app.map.OfflineTileManager
 import com.cartracker.app.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +33,9 @@ class LocationTrackingService : LifecycleService() {
 
     private var currentTripId: Long? = null
     private var isMoving = false
-    private var lastLocation: Location? = null
+    private var lastLocation: Location? = null      // For speed calculation
+    private var lastLocationTime: Long = 0
+    private var lastTripLocation: Location? = null   // For trip distance calculation
     private var stationaryStartTime: Long = 0
     private var totalDistance: Double = 0.0
     private var pointCount: Int = 0
@@ -59,14 +62,15 @@ class LocationTrackingService : LifecycleService() {
         private const val TAG = "LocationTrackingService"
 
         // Speed threshold: below this = considered parked (km/h)
-        // Set to 8 km/h to avoid GPS noise triggering false trips
-        private const val PARKING_SPEED_THRESHOLD = 8.0f
+        // Set to 5 km/h — low enough to detect real movement, high enough to filter GPS jitter
+        private const val PARKING_SPEED_THRESHOLD = 5.0f
 
         // Number of consecutive above-threshold readings needed to start trip
         private const val REQUIRED_MOVING_COUNT = 3
 
         // Minimum GPS accuracy to trust speed readings (meters)
-        private const val MIN_ACCURACY_METERS = 30f
+        // Relaxed to 50m to work with older GPS hardware (e.g. Galaxy S6)
+        private const val MIN_ACCURACY_METERS = 50f
 
         // Time stationary before ending trip (milliseconds) - 2 minutes
         private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
@@ -188,26 +192,57 @@ class LocationTrackingService : LifecycleService() {
     }
 
     private fun processLocation(location: Location) {
-        val speedKmh = location.speed * 3.6f // m/s to km/h
-
         // Always update current location for the map, regardless of accuracy
         _currentLocation.value = location
 
-        // Filter out inaccurate readings for speed/trip logic
+        // Cache map tiles around current location for offline use
+        OfflineTileManager.cacheTilesAroundLocation(
+            this, location.latitude, location.longitude, lifecycleScope
+        )
+
+        // Filter out very inaccurate readings for speed/trip logic
         if (location.accuracy > MIN_ACCURACY_METERS) {
-            Log.d(TAG, "Ignoring inaccurate location: accuracy=${location.accuracy}m, speed=$speedKmh km/h")
-            // Still update speed display but don't use for trip logic
-            _currentSpeed.value = speedKmh
+            Log.d(TAG, "Ignoring inaccurate location: accuracy=${location.accuracy}m")
             return
         }
 
-        // Only trust speed if the location has speed data (hasSpeed)
-        val reliableSpeed = if (location.hasSpeed()) speedKmh else 0f
-        _currentSpeed.value = reliableSpeed
+        // Calculate speed - use device speed if available, otherwise compute from distance
+        val speedKmh: Float
+        if (location.hasSpeed() && location.speed > 0f) {
+            speedKmh = location.speed * 3.6f // m/s to km/h
+            Log.d(TAG, "GPS speed: $speedKmh km/h (hasSpeed=true)")
+        } else {
+            // Many older devices (e.g. Galaxy S6) don't provide speed via LocationManager
+            // Calculate speed from distance between consecutive fixes
+            val prevLoc = lastLocation
+            val prevTime = lastLocationTime
+            if (prevLoc != null && prevTime > 0) {
+                val distanceM = prevLoc.distanceTo(location).toDouble()
+                val timeDiffSec = (location.time - prevTime) / 1000.0
+                if (timeDiffSec > 0.5 && timeDiffSec < 30.0) {
+                    // Only compute speed if time gap is reasonable (0.5s to 30s)
+                    val speedMs = distanceM / timeDiffSec
+                    speedKmh = (speedMs * 3.6).toFloat()
+                    Log.d(TAG, "Computed speed: $speedKmh km/h (dist=${String.format("%.1f", distanceM)}m, dt=${String.format("%.1f", timeDiffSec)}s)")
+                } else {
+                    speedKmh = 0f
+                    Log.d(TAG, "Time gap too large/small for speed calc: ${timeDiffSec}s")
+                }
+            } else {
+                speedKmh = 0f
+                Log.d(TAG, "No previous location for speed calculation")
+            }
+        }
+
+        // Update last location for next speed calculation (before trip logic)
+        lastLocation = location
+        lastLocationTime = location.time
+
+        _currentSpeed.value = speedKmh
 
         if (isMoving) {
             // Currently on a trip
-            if (reliableSpeed < PARKING_SPEED_THRESHOLD) {
+            if (speedKmh < PARKING_SPEED_THRESHOLD) {
                 // Speed dropped - might be parking
                 if (stationaryStartTime == 0L) {
                     stationaryStartTime = System.currentTimeMillis()
@@ -222,22 +257,22 @@ class LocationTrackingService : LifecycleService() {
             }
 
             // Record location point
-            recordLocationPoint(location, reliableSpeed)
+            recordLocationPoint(location, speedKmh)
 
         } else {
             // Currently parked - check if starting to move
             // Require multiple consecutive readings above threshold to avoid GPS jitter
-            if (reliableSpeed >= PARKING_SPEED_THRESHOLD) {
+            if (speedKmh >= PARKING_SPEED_THRESHOLD) {
                 consecutiveMovingCount++
-                Log.d(TAG, "Movement detected: $reliableSpeed km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
+                Log.d(TAG, "Movement detected: $speedKmh km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
                 if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
                     consecutiveMovingCount = 0
-                    startTrip(location, reliableSpeed)
+                    startTrip(location, speedKmh)
                 }
             } else {
                 // Reset counter if speed drops below threshold
                 if (consecutiveMovingCount > 0) {
-                    Log.d(TAG, "Movement reset: speed dropped to $reliableSpeed km/h")
+                    Log.d(TAG, "Movement reset: speed dropped to $speedKmh km/h")
                 }
                 consecutiveMovingCount = 0
             }
@@ -252,7 +287,7 @@ class LocationTrackingService : LifecycleService() {
         totalDistance = 0.0
         pointCount = 0
         speedSum = 0f
-        lastLocation = null
+        lastTripLocation = null
 
         lifecycleScope.launch(Dispatchers.IO) {
             val trip = Trip(
@@ -310,11 +345,11 @@ class LocationTrackingService : LifecycleService() {
     private fun recordLocationPoint(location: Location, speedKmh: Float) {
         val tripId = currentTripId ?: return
 
-        // Calculate distance from last point
-        lastLocation?.let { last ->
+        // Calculate distance from last trip point
+        lastTripLocation?.let { last ->
             totalDistance += last.distanceTo(location).toDouble()
         }
-        lastLocation = location
+        lastTripLocation = location
         pointCount++
         speedSum += speedKmh
 
