@@ -46,6 +46,7 @@ class LocationTrackingService : LifecycleService() {
     private var pointCount: Int = 0
     private var speedSum: Float = 0f
     private var lastValidSpeed: Float = 0f  // For acceleration-based spike detection
+    private var smoothedSpeed: Float = 0f   // EMA-smoothed speed for display & trip logic
 
     // Wake lock to keep tracking in background
     private var wakeLock: PowerManager.WakeLock? = null
@@ -92,8 +93,9 @@ class LocationTrackingService : LifecycleService() {
         private const val TAG = "LocationTrackingService"
 
         // Speed threshold: below this = considered parked (km/h)
-        // Set to 5 km/h — low enough to detect real movement, high enough to filter GPS jitter
-        private const val PARKING_SPEED_THRESHOLD = 5.0f
+        // Set to 8 km/h — GPS jitter on Galaxy S6 can produce up to 18 km/h when stationary
+        // Real driving is consistently above 8 km/h, so this prevents false trip starts
+        private const val PARKING_SPEED_THRESHOLD = 8.0f
 
         // Number of consecutive above-threshold readings needed to start trip
         private const val REQUIRED_MOVING_COUNT = 3
@@ -102,6 +104,12 @@ class LocationTrackingService : LifecycleService() {
         // Tightened to 30m — network locations (48m+) must be excluded from speed calc
         private const val MIN_ACCURACY_METERS = 30f
 
+        // Minimum distance (meters) between GPS fixes to compute speed from distance
+        // If distance is less than this OR less than the GPS accuracy, the movement is
+        // GPS jitter (position bouncing within the accuracy circle), not real movement.
+        // Galaxy S6 jitters by 5-15m even when stationary — this filter catches that.
+        private const val MIN_DISTANCE_FOR_SPEED_M = 10.0
+
         // Maximum realistic speed for a car (km/h) - anything above is GPS glitch
         private const val MAX_REALISTIC_SPEED = 200f
 
@@ -109,12 +117,17 @@ class LocationTrackingService : LifecycleService() {
         // A car goes 0-100 km/h in ~8s = 12.5 km/h/s. We allow 20 km/h/s for safety margin.
         private const val MAX_ACCELERATION_KMH_PER_SEC = 20f
 
+        // Exponential Moving Average (EMA) smoothing factor for speed display
+        // Higher = more responsive but noisier, Lower = smoother but laggier
+        // 0.4 means 40% new reading + 60% previous smoothed value
+        private const val SPEED_EMA_ALPHA = 0.4f
+
         // Time stationary before ending trip (milliseconds) - 2 minutes
         private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
 
-        // Location update intervals
-        private const val ACTIVE_INTERVAL_MS = 3000L       // 3 seconds when moving
-        private const val PASSIVE_INTERVAL_MS = 5000L       // 5 seconds when parked
+        // Location update intervals — faster for more responsive speed display
+        private const val ACTIVE_INTERVAL_MS = 2000L       // 2 seconds when moving
+        private const val PASSIVE_INTERVAL_MS = 3000L       // 3 seconds when parked
         private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
 
         // Data retention: 30 days in milliseconds
@@ -365,11 +378,11 @@ class LocationTrackingService : LifecycleService() {
             return
         }
 
-        // Calculate speed - use device speed if available, otherwise compute from distance
-        val speedKmh: Float
+        // Calculate raw speed - use device speed if available, otherwise compute from distance
+        var rawSpeedKmh: Float
         if (location.hasSpeed() && location.speed > 0f) {
-            speedKmh = location.speed * 3.6f // m/s to km/h
-            Log.d(TAG, "GPS speed: $speedKmh km/h (hasSpeed=true)")
+            rawSpeedKmh = location.speed * 3.6f // m/s to km/h
+            Log.d(TAG, "GPS speed: $rawSpeedKmh km/h (hasSpeed=true)")
         } else {
             // Many older devices (e.g. Galaxy S6) don't provide speed via LocationManager
             // Calculate speed from distance between consecutive fixes
@@ -379,35 +392,46 @@ class LocationTrackingService : LifecycleService() {
                 val distanceM = prevLoc.distanceTo(location).toDouble()
                 val timeDiffSec = (location.time - prevTime) / 1000.0
                 if (timeDiffSec > 0.5 && timeDiffSec < 30.0) {
-                    // Only compute speed if time gap is reasonable (0.5s to 30s)
-                    val speedMs = distanceM / timeDiffSec
-                    speedKmh = (speedMs * 3.6).toFloat()
-                    Log.d(TAG, "Computed speed: $speedKmh km/h (dist=${String.format("%.1f", distanceM)}m, dt=${String.format("%.1f", timeDiffSec)}s)")
+                    // GPS JITTER FILTER: If distance moved is less than the GPS accuracy
+                    // radius or our minimum threshold, the "movement" is just GPS noise,
+                    // not real physical movement. GPS positions on Galaxy S6 bounce by
+                    // 5-15m even when completely stationary, which used to create false
+                    // speeds of 10-18 km/h.
+                    val minDistance = maxOf(MIN_DISTANCE_FOR_SPEED_M, location.accuracy.toDouble())
+                    if (distanceM < minDistance) {
+                        rawSpeedKmh = 0f
+                        Log.d(TAG, "GPS jitter filtered: dist=${String.format("%.1f", distanceM)}m < min=${String.format("%.1f", minDistance)}m → speed=0")
+                    } else {
+                        // Only compute speed if time gap is reasonable (0.5s to 30s)
+                        val speedMs = distanceM / timeDiffSec
+                        rawSpeedKmh = (speedMs * 3.6).toFloat()
+                        Log.d(TAG, "Computed speed: $rawSpeedKmh km/h (dist=${String.format("%.1f", distanceM)}m, dt=${String.format("%.1f", timeDiffSec)}s)")
+                    }
                 } else {
-                    speedKmh = 0f
+                    rawSpeedKmh = 0f
                     Log.d(TAG, "Time gap too large/small for speed calc: ${timeDiffSec}s")
                 }
             } else {
-                speedKmh = 0f
+                rawSpeedKmh = 0f
                 Log.d(TAG, "No previous location for speed calculation")
             }
         }
 
         // Sanity check 1: discard impossible speeds (GPS glitch)
-        if (speedKmh > MAX_REALISTIC_SPEED) {
-            Log.w(TAG, "Ignoring unrealistic speed: $speedKmh km/h (max: $MAX_REALISTIC_SPEED)")
+        if (rawSpeedKmh > MAX_REALISTIC_SPEED) {
+            Log.w(TAG, "Ignoring unrealistic speed: $rawSpeedKmh km/h (max: $MAX_REALISTIC_SPEED)")
             // Don't update lastLocation — treat this reading as garbage
             return
         }
 
         // Sanity check 2: acceleration limiter — reject speed spikes caused by position jumps
         // A real car cannot accelerate faster than ~20 km/h per second
-        if (lastLocationTime > 0 && speedKmh > 0f) {
+        if (lastLocationTime > 0 && rawSpeedKmh > 0f) {
             val timeDiffSec = (location.time - lastLocationTime) / 1000.0f
             if (timeDiffSec > 0f) {
                 val maxAllowedSpeed = lastValidSpeed + (MAX_ACCELERATION_KMH_PER_SEC * timeDiffSec)
-                if (speedKmh > maxAllowedSpeed && speedKmh > 30f) {
-                    Log.w(TAG, "Acceleration spike rejected: $speedKmh km/h (max allowed: ${String.format("%.1f", maxAllowedSpeed)} km/h, prev: ${String.format("%.1f", lastValidSpeed)} km/h, dt: ${String.format("%.1f", timeDiffSec)}s)")
+                if (rawSpeedKmh > maxAllowedSpeed && rawSpeedKmh > 30f) {
+                    Log.w(TAG, "Acceleration spike rejected: $rawSpeedKmh km/h (max allowed: ${String.format("%.1f", maxAllowedSpeed)} km/h, prev: ${String.format("%.1f", lastValidSpeed)} km/h, dt: ${String.format("%.1f", timeDiffSec)}s)")
                     // Don't update lastLocation — keep the good reference point
                     return
                 }
@@ -417,17 +441,32 @@ class LocationTrackingService : LifecycleService() {
         // Update last location for next speed calculation (before trip logic)
         lastLocation = location
         lastLocationTime = location.time
-        lastValidSpeed = speedKmh
+        lastValidSpeed = rawSpeedKmh
 
-        _currentSpeed.value = speedKmh
+        // Apply Exponential Moving Average (EMA) smoothing for stable speed display
+        // This prevents the speed from jumping erratically due to GPS timing variations
+        // and provides a more "instantaneous" feel by smoothing over multiple readings
+        smoothedSpeed = if (smoothedSpeed == 0f && rawSpeedKmh > 0f) {
+            // First non-zero reading — use it directly for fast initial response
+            rawSpeedKmh
+        } else if (rawSpeedKmh == 0f && smoothedSpeed < 2f) {
+            // Known stationary — snap to zero quickly instead of slowly decaying
+            0f
+        } else {
+            SPEED_EMA_ALPHA * rawSpeedKmh + (1f - SPEED_EMA_ALPHA) * smoothedSpeed
+        }
+
+        // Use smoothed speed for display and trip logic
+        val speedForLogic = smoothedSpeed
+        _currentSpeed.value = smoothedSpeed
 
         if (isMoving) {
             // Currently on a trip
-            if (speedKmh < PARKING_SPEED_THRESHOLD) {
+            if (speedForLogic < PARKING_SPEED_THRESHOLD) {
                 // Speed dropped - might be parking
                 if (stationaryStartTime == 0L) {
                     stationaryStartTime = System.currentTimeMillis()
-                    Log.d(TAG, "Stationary timer started")
+                    Log.d(TAG, "Stationary timer started (smoothed=${String.format("%.1f", speedForLogic)} km/h)")
                 } else {
                     val elapsed = System.currentTimeMillis() - stationaryStartTime
                     if (elapsed > PARKING_TIMEOUT_MS) {
@@ -442,28 +481,28 @@ class LocationTrackingService : LifecycleService() {
             } else {
                 // Still moving - reset stationary timer
                 if (stationaryStartTime > 0) {
-                    Log.d(TAG, "Movement resumed - stationary timer reset")
+                    Log.d(TAG, "Movement resumed - stationary timer reset (smoothed=${String.format("%.1f", speedForLogic)} km/h)")
                 }
                 stationaryStartTime = 0
             }
 
-            // Record location point
-            recordLocationPoint(location, speedKmh)
+            // Record location point (use raw speed for DB accuracy, smoothed for display)
+            recordLocationPoint(location, rawSpeedKmh)
 
         } else {
             // Currently parked - check if starting to move
             // Require multiple consecutive readings above threshold to avoid GPS jitter
-            if (speedKmh >= PARKING_SPEED_THRESHOLD) {
+            if (speedForLogic >= PARKING_SPEED_THRESHOLD) {
                 consecutiveMovingCount++
-                Log.d(TAG, "Movement detected: $speedKmh km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
+                Log.d(TAG, "Movement detected: smoothed=${String.format("%.1f", speedForLogic)} km/h raw=${String.format("%.1f", rawSpeedKmh)} km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
                 if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
                     consecutiveMovingCount = 0
-                    startTrip(location, speedKmh)
+                    startTrip(location, rawSpeedKmh)
                 }
             } else {
                 // Reset counter if speed drops below threshold
                 if (consecutiveMovingCount > 0) {
-                    Log.d(TAG, "Movement reset: speed dropped to $speedKmh km/h")
+                    Log.d(TAG, "Movement reset: smoothed speed dropped to ${String.format("%.1f", speedForLogic)} km/h")
                 }
                 consecutiveMovingCount = 0
             }
