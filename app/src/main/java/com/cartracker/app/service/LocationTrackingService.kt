@@ -21,6 +21,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.TimeUnit
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.Manifest
 
 class LocationTrackingService : LifecycleService() {
 
@@ -118,8 +121,15 @@ class LocationTrackingService : LifecycleService() {
         }
     }
 
-    @Suppress("MissingPermission")
     private fun getLastKnownLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "Location permission not granted for last known location")
+            return
+        }
         try {
             // Try GPS first, then network
             val gpsLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
@@ -341,8 +351,17 @@ class LocationTrackingService : LifecycleService() {
         updateNotification("Trip #$tripId - ${String.format("%.0f", speedKmh)} km/h | ${String.format("%.1f", totalDistance / 1000)} km")
     }
 
-    @Suppress("MissingPermission")
     private fun startLocationUpdates(activeMode: Boolean) {
+        // Check permission at runtime
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "Location permission not granted, cannot start updates")
+            return
+        }
+
         // Remove previous updates
         locationManager.removeUpdates(locationListener)
 
@@ -412,13 +431,15 @@ class LocationTrackingService : LifecycleService() {
     }
 
     private fun acquireWakeLock() {
-        wakeLock?.release()
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "CarTracker::LocationTracking"
         ).apply {
-            acquire(TimeUnit.DAYS.toMillis(365)) // Long-running
+            acquire(TimeUnit.HOURS.toMillis(6)) // Re-acquired on each onStartCommand
         }
     }
 
@@ -432,21 +453,36 @@ class LocationTrackingService : LifecycleService() {
     override fun onDestroy() {
         super.onDestroy()
         locationManager.removeUpdates(locationListener)
-        wakeLock?.release()
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
         _isTracking.value = false
         _isMovingFlow.value = false
+        _currentSpeed.value = 0f
+        _currentLocation.value = null
+        _currentTripIdFlow.value = null
 
-        // End any active trip
+        // End any active trip using a non-blocking approach
         currentTripId?.let { tripId ->
-            runBlocking(Dispatchers.IO) {
-                val trip = db.tripDao().getTripById(tripId)
-                trip?.let {
-                    db.tripDao().update(it.copy(
-                        endTime = System.currentTimeMillis(),
-                        isActive = false,
-                        distanceMeters = totalDistance,
-                        durationMillis = System.currentTimeMillis() - it.startTime
-                    ))
+            val dist = totalDistance
+            val appDb = db
+            // Use a GlobalScope coroutine so it survives service destruction
+            // This is one of the rare valid uses of GlobalScope
+            @Suppress("OPT_IN_USAGE")
+            GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    val trip = appDb.tripDao().getTripById(tripId)
+                    trip?.let {
+                        appDb.tripDao().update(it.copy(
+                            endTime = System.currentTimeMillis(),
+                            isActive = false,
+                            distanceMeters = dist,
+                            durationMillis = System.currentTimeMillis() - it.startTime
+                        ))
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error ending trip on destroy", e)
                 }
             }
         }

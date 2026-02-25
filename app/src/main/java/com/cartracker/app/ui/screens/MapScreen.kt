@@ -61,6 +61,7 @@ fun MapScreen(viewModel: MainViewModel) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            @Suppress("DEPRECATION")
             setBuiltInZoomControls(false)
             controller.setZoom(15.0)
             // Default to a sensible location (center of the world)
@@ -89,8 +90,9 @@ fun MapScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Update map when data changes
-    LaunchedEffect(currentLocation, selectedTripWithPoints, allPoints, selectedTripId) {
+    // Update map overlays for route data (trips/all points)
+    LaunchedEffect(selectedTripWithPoints, allPoints, selectedTripId) {
+        // Remove all overlays except the GPS location overlay (last one)
         mapView.overlays.clear()
 
         if (selectedTripId != null) {
@@ -129,8 +131,26 @@ fun MapScreen(viewModel: MainViewModel) {
             }
         }
 
-        // Current location - high precision GPS overlay
+        // Re-add current location overlay if available
         currentLocation?.let { loc ->
+            val gpsOverlay = MyLocationOverlay(
+                geoPoint = GeoPoint(loc.latitude, loc.longitude),
+                accuracyMeters = loc.accuracy,
+                bearing = if (loc.hasBearing()) loc.bearing else null,
+                isMoving = isMoving
+            )
+            mapView.overlays.add(gpsOverlay)
+        }
+
+        mapView.invalidate()
+    }
+
+    // Update GPS location overlay only (lightweight, no route rebuild)
+    LaunchedEffect(currentLocation, isMoving) {
+        currentLocation?.let { loc ->
+            // Remove existing GPS overlay (always the last one if present) and re-add
+            mapView.overlays.removeAll { it is MyLocationOverlay }
+
             val gpsOverlay = MyLocationOverlay(
                 geoPoint = GeoPoint(loc.latitude, loc.longitude),
                 accuracyMeters = loc.accuracy,
@@ -143,9 +163,9 @@ fun MapScreen(viewModel: MainViewModel) {
             if (selectedTripId == null) {
                 mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
             }
-        }
 
-        mapView.invalidate()
+            mapView.invalidate()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -477,6 +497,12 @@ private class MyLocationOverlay(
         style = Paint.Style.FILL
     }
 
+    // Inner highlight (pre-allocated to avoid allocation in draw())
+    private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x40FFFFFF
+        style = Paint.Style.FILL
+    }
+
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
 
@@ -533,10 +559,6 @@ private class MyLocationOverlay(
         canvas.drawCircle(x, y, 11f, centerPaint)
 
         // Draw inner highlight (gives 3D look)
-        val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0x40FFFFFF
-            style = Paint.Style.FILL
-        }
         canvas.drawCircle(x - 3f, y - 3f, 5f, highlightPaint)
     }
 }

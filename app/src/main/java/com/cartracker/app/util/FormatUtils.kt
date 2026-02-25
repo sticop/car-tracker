@@ -5,6 +5,20 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 
 object FormatUtils {
+    // Cached formatters (SimpleDateFormat is not thread-safe, using ThreadLocal)
+    private val timeFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("HH:mm", Locale.getDefault())
+    }
+    private val dateTimeFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+    }
+    private val dateFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("EEE, MMM dd yyyy", Locale.getDefault())
+    }
+    private val fullDateTimeFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("EEEE, MMMM dd yyyy 'at' HH:mm:ss", Locale.getDefault())
+    }
+
     fun formatSpeed(speedKmh: Float): String {
         return String.format("%.0f km/h", speedKmh)
     }
@@ -30,23 +44,19 @@ object FormatUtils {
     }
 
     fun formatTime(timestamp: Long): String {
-        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-        return sdf.format(Date(timestamp))
+        return timeFormat.get()!!.format(Date(timestamp))
     }
 
     fun formatDateTime(timestamp: Long): String {
-        val sdf = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-        return sdf.format(Date(timestamp))
+        return dateTimeFormat.get()!!.format(Date(timestamp))
     }
 
     fun formatDate(timestamp: Long): String {
-        val sdf = SimpleDateFormat("EEE, MMM dd yyyy", Locale.getDefault())
-        return sdf.format(Date(timestamp))
+        return dateFormat.get()!!.format(Date(timestamp))
     }
 
     fun formatFullDateTime(timestamp: Long): String {
-        val sdf = SimpleDateFormat("EEEE, MMMM dd yyyy 'at' HH:mm:ss", Locale.getDefault())
-        return sdf.format(Date(timestamp))
+        return fullDateTimeFormat.get()!!.format(Date(timestamp))
     }
 
     fun isToday(timestamp: Long): Boolean {

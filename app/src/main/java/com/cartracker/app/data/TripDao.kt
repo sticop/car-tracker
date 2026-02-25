@@ -33,6 +33,7 @@ interface TripDao {
     suspend fun getTripsSinceSync(since: Long): List<Trip>
 
     @Query("DELETE FROM trips WHERE startTime < :before")
+    @Transaction
     suspend fun deleteOlderThan(before: Long)
 
     @Query("SELECT * FROM trips ORDER BY startTime DESC LIMIT 1")

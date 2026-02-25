@@ -20,10 +20,11 @@ interface LocationPointDao {
     @Query("SELECT * FROM location_points WHERE tripId = :tripId ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLastPointForTrip(tripId: Long): LocationPoint?
 
-    @Query("SELECT * FROM location_points WHERE timestamp >= :since ORDER BY timestamp ASC")
+    @Query("SELECT * FROM location_points WHERE timestamp >= :since ORDER BY timestamp ASC LIMIT 10000")
     fun getPointsSince(since: Long): Flow<List<LocationPoint>>
 
     @Query("DELETE FROM location_points WHERE timestamp < :before")
+    @Transaction
     suspend fun deleteOlderThan(before: Long)
 
     @Query("SELECT MAX(speedKmh) FROM location_points WHERE tripId = :tripId")

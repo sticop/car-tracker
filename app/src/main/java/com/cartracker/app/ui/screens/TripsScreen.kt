@@ -188,10 +188,14 @@ fun TripsScreen(
                         )
                     }
 
-                    items(dayTrips) { trip ->
+                    items(
+                        items = dayTrips,
+                        key = { trip -> trip.id }
+                    ) { trip ->
+                        val tripIndex = trips.indexOf(trip)
                         TripCard(
                             trip = trip,
-                            tripNumber = trips.size - trips.indexOf(trip),
+                            tripNumber = trips.size - tripIndex,
                             isCurrentTrip = trip.id == currentTripId,
                             onClick = { onTripSelected(trip.id) }
                         )

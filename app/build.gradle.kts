@@ -23,7 +23,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -40,6 +41,11 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    // Room schema export for migrations
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.4"
@@ -70,6 +76,9 @@ dependencies {
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")
 
+    // Preference (for osmdroid config)
+    implementation("androidx.preference:preference-ktx:1.2.1")
+
     // OpenStreetMap (no API key required)
     implementation("org.osmdroid:osmdroid-android:6.1.18")
 
@@ -81,12 +90,6 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     // removed play-services coroutines (no longer needed)
-
-    // WorkManager for periodic cleanup
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
-
-    // DataStore for preferences
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Desugaring for API 24 support
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")

@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [Trip::class, LocationPoint::class],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun tripDao(): TripDao
@@ -25,6 +25,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "car_tracker_db"
                 )
+                    // For v1, fallbackToDestructiveMigration is acceptable
+                    // Add proper migrations when incrementing version
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
