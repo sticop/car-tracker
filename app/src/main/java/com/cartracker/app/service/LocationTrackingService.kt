@@ -45,13 +45,38 @@ class LocationTrackingService : LifecycleService() {
     private var totalDistance: Double = 0.0
     private var pointCount: Int = 0
     private var speedSum: Float = 0f
+    private var lastValidSpeed: Float = 0f  // For acceleration-based spike detection
 
     // Wake lock to keep tracking in background
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val locationListener = object : LocationListener {
+    // GPS listener — used for speed calculation, trip logic, AND map display
+    private val gpsLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             processLocation(location)
+        }
+
+        @Deprecated("Deprecated in API level 29")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
+
+    // Network listener — ONLY updates the map position, never used for speed/trip logic
+    // Network locations have 30-50m accuracy and cause position jumps that create fake speed spikes
+    private val networkLocationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            // Only update map if we don't have a recent GPS fix (>10 seconds old)
+            val lastGpsTime = lastLocationTime
+            val now = System.currentTimeMillis()
+            if (lastGpsTime == 0L || (now - lastGpsTime) > 10_000) {
+                _currentLocation.value = location
+                Log.d(TAG, "Network location for map only: ${location.latitude}, ${location.longitude} (accuracy=${location.accuracy}m)")
+            }
+            // Cache tiles around network location too
+            OfflineTileManager.cacheTilesAroundLocation(
+                this@LocationTrackingService, location.latitude, location.longitude, lifecycleScope
+            )
         }
 
         @Deprecated("Deprecated in API level 29")
@@ -74,11 +99,15 @@ class LocationTrackingService : LifecycleService() {
         private const val REQUIRED_MOVING_COUNT = 3
 
         // Minimum GPS accuracy to trust speed readings (meters)
-        // Relaxed to 50m to work with older GPS hardware (e.g. Galaxy S6)
-        private const val MIN_ACCURACY_METERS = 50f
+        // Tightened to 30m — network locations (48m+) must be excluded from speed calc
+        private const val MIN_ACCURACY_METERS = 30f
 
         // Maximum realistic speed for a car (km/h) - anything above is GPS glitch
-        private const val MAX_REALISTIC_SPEED = 300f
+        private const val MAX_REALISTIC_SPEED = 200f
+
+        // Maximum acceleration allowed between consecutive readings (km/h per second)
+        // A car goes 0-100 km/h in ~8s = 12.5 km/h/s. We allow 20 km/h/s for safety margin.
+        private const val MAX_ACCELERATION_KMH_PER_SEC = 20f
 
         // Time stationary before ending trip (milliseconds) - 2 minutes
         private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
@@ -171,7 +200,8 @@ class LocationTrackingService : LifecycleService() {
                 // First mock location: disable real GPS to prevent interference
                 if (!mockModeActive) {
                     mockModeActive = true
-                    locationManager.removeUpdates(locationListener)
+                    locationManager.removeUpdates(gpsLocationListener)
+                    locationManager.removeUpdates(networkLocationListener)
                     Log.d(TAG, "Mock mode activated - real GPS disabled")
                 }
                 // Use string extras for maximum compatibility with adb
@@ -329,8 +359,9 @@ class LocationTrackingService : LifecycleService() {
         )
 
         // Filter out very inaccurate readings for speed/trip logic
+        // This excludes network/cell tower locations (typically 30-50m accuracy)
         if (location.accuracy > MIN_ACCURACY_METERS) {
-            Log.d(TAG, "Ignoring inaccurate location: accuracy=${location.accuracy}m")
+            Log.d(TAG, "Ignoring inaccurate location for speed/trip: accuracy=${location.accuracy}m (max=${MIN_ACCURACY_METERS}m)")
             return
         }
 
@@ -362,16 +393,31 @@ class LocationTrackingService : LifecycleService() {
             }
         }
 
-        // Sanity check: discard impossible speeds (GPS glitch / provider switching)
+        // Sanity check 1: discard impossible speeds (GPS glitch)
         if (speedKmh > MAX_REALISTIC_SPEED) {
             Log.w(TAG, "Ignoring unrealistic speed: $speedKmh km/h (max: $MAX_REALISTIC_SPEED)")
             // Don't update lastLocation — treat this reading as garbage
             return
         }
 
+        // Sanity check 2: acceleration limiter — reject speed spikes caused by position jumps
+        // A real car cannot accelerate faster than ~20 km/h per second
+        if (lastLocationTime > 0 && speedKmh > 0f) {
+            val timeDiffSec = (location.time - lastLocationTime) / 1000.0f
+            if (timeDiffSec > 0f) {
+                val maxAllowedSpeed = lastValidSpeed + (MAX_ACCELERATION_KMH_PER_SEC * timeDiffSec)
+                if (speedKmh > maxAllowedSpeed && speedKmh > 30f) {
+                    Log.w(TAG, "Acceleration spike rejected: $speedKmh km/h (max allowed: ${String.format("%.1f", maxAllowedSpeed)} km/h, prev: ${String.format("%.1f", lastValidSpeed)} km/h, dt: ${String.format("%.1f", timeDiffSec)}s)")
+                    // Don't update lastLocation — keep the good reference point
+                    return
+                }
+            }
+        }
+
         // Update last location for next speed calculation (before trip logic)
         lastLocation = location
         lastLocationTime = location.time
+        lastValidSpeed = speedKmh
 
         _currentSpeed.value = speedKmh
 
@@ -548,8 +594,9 @@ class LocationTrackingService : LifecycleService() {
             return
         }
 
-        // Remove previous updates
-        locationManager.removeUpdates(locationListener)
+        // Remove previous updates from both listeners
+        locationManager.removeUpdates(gpsLocationListener)
+        locationManager.removeUpdates(networkLocationListener)
 
         val intervalMs = if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
         // Use 0 min distance in passive mode so we get updates even when stationary
@@ -558,31 +605,33 @@ class LocationTrackingService : LifecycleService() {
 
         Log.d(TAG, "Starting location updates: activeMode=$activeMode interval=${intervalMs}ms minDist=${minDistance}m")
 
-        // Try GPS provider first, then network as fallback
+        // GPS provider — used for BOTH map display AND speed/trip calculations
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     intervalMs,
                     minDistance,
-                    locationListener,
+                    gpsLocationListener,
                     Looper.getMainLooper()
                 )
-                Log.d(TAG, "GPS provider registered")
+                Log.d(TAG, "GPS provider registered (speed + map)")
             } else {
                 Log.w(TAG, "GPS provider not available")
             }
 
-            // Also request network updates as supplement
+            // Network provider — used ONLY for map display, never for speed calculation
+            // Network locations have 30-50m accuracy and cause position jumps
+            // that create fake speed spikes (e.g. the 95 km/h spike in Trip #4)
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
-                    intervalMs * 2, // less frequent for network
-                    minDistance,
-                    locationListener,
+                    intervalMs * 3, // much less frequent — just a fallback for map
+                    50f, // only update if moved significantly
+                    networkLocationListener,
                     Looper.getMainLooper()
                 )
-                Log.d(TAG, "Network provider registered")
+                Log.d(TAG, "Network provider registered (map only, NOT for speed)")
             } else {
                 Log.w(TAG, "Network provider not available")
             }
@@ -638,7 +687,8 @@ class LocationTrackingService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        locationManager.removeUpdates(locationListener)
+        locationManager.removeUpdates(gpsLocationListener)
+        locationManager.removeUpdates(networkLocationListener)
         // Unregister mock location receiver
         if (mockReceiverRegistered) {
             try { unregisterReceiver(mockLocationReceiver) } catch (_: Exception) {}
