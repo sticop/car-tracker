@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 
 class LocationTrackingService : LifecycleService() {
 
@@ -71,6 +73,9 @@ class LocationTrackingService : LifecycleService() {
         // Minimum GPS accuracy to trust speed readings (meters)
         // Relaxed to 50m to work with older GPS hardware (e.g. Galaxy S6)
         private const val MIN_ACCURACY_METERS = 50f
+
+        // Maximum realistic speed for a car (km/h) - anything above is GPS glitch
+        private const val MAX_REALISTIC_SPEED = 300f
 
         // Time stationary before ending trip (milliseconds) - 2 minutes
         private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
@@ -125,10 +130,50 @@ class LocationTrackingService : LifecycleService() {
         }
     }
 
+    // When true, suppresses real GPS updates (for mock/simulation testing)
+    private var mockModeActive = false
+
+    // Debug mock location receiver for simulation testing
+    private val mockLocationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "com.cartracker.app.MOCK_LOCATION") {
+                // First mock location: disable real GPS to prevent interference
+                if (!mockModeActive) {
+                    mockModeActive = true
+                    locationManager.removeUpdates(locationListener)
+                    Log.d(TAG, "Mock mode activated - real GPS disabled")
+                }
+                // Use string extras for maximum compatibility with adb
+                val lat = intent.getStringExtra("lat")?.toDoubleOrNull() ?: 0.0
+                val lon = intent.getStringExtra("lon")?.toDoubleOrNull() ?: 0.0
+                val mockLocation = Location("mock").apply {
+                    latitude = lat
+                    longitude = lon
+                    accuracy = 5f
+                    time = System.currentTimeMillis()
+                    elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                }
+                Log.d(TAG, "Mock location received: $lat, $lon")
+                processLocation(mockLocation)
+            }
+        }
+    }
+    private var mockReceiverRegistered = false
+
     override fun onCreate() {
         super.onCreate()
         db = (application as CarTrackerApp).database
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+        // Register debug mock location receiver
+        try {
+            val filter = IntentFilter("com.cartracker.app.MOCK_LOCATION")
+            registerReceiver(mockLocationReceiver, filter)
+            mockReceiverRegistered = true
+            Log.d(TAG, "Mock location receiver registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register mock receiver", e)
+        }
 
         // Clean old data on service start
         lifecycleScope.launch(Dispatchers.IO) {
@@ -283,6 +328,13 @@ class LocationTrackingService : LifecycleService() {
             }
         }
 
+        // Sanity check: discard impossible speeds (GPS glitch / provider switching)
+        if (speedKmh > MAX_REALISTIC_SPEED) {
+            Log.w(TAG, "Ignoring unrealistic speed: $speedKmh km/h (max: $MAX_REALISTIC_SPEED)")
+            // Don't update lastLocation — treat this reading as garbage
+            return
+        }
+
         // Update last location for next speed calculation (before trip logic)
         lastLocation = location
         lastLocationTime = location.time
@@ -295,13 +347,23 @@ class LocationTrackingService : LifecycleService() {
                 // Speed dropped - might be parking
                 if (stationaryStartTime == 0L) {
                     stationaryStartTime = System.currentTimeMillis()
-                } else if (System.currentTimeMillis() - stationaryStartTime > PARKING_TIMEOUT_MS) {
-                    // Been stationary long enough - end trip
-                    endTrip()
-                    return
+                    Log.d(TAG, "Stationary timer started")
+                } else {
+                    val elapsed = System.currentTimeMillis() - stationaryStartTime
+                    if (elapsed > PARKING_TIMEOUT_MS) {
+                        // Been stationary long enough - end trip
+                        Log.d(TAG, "Parking timeout reached (${elapsed}ms) - ending trip")
+                        endTrip()
+                        return
+                    } else {
+                        Log.d(TAG, "Stationary for ${elapsed / 1000}s / ${PARKING_TIMEOUT_MS / 1000}s")
+                    }
                 }
             } else {
                 // Still moving - reset stationary timer
+                if (stationaryStartTime > 0) {
+                    Log.d(TAG, "Movement resumed - stationary timer reset")
+                }
                 stationaryStartTime = 0
             }
 
@@ -436,6 +498,12 @@ class LocationTrackingService : LifecycleService() {
     }
 
     private fun startLocationUpdates(activeMode: Boolean) {
+        // Skip real GPS registration if mock mode is active (simulation testing)
+        if (mockModeActive) {
+            Log.d(TAG, "Mock mode active - skipping real GPS registration")
+            return
+        }
+
         // Check permission at runtime
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED &&
@@ -537,6 +605,11 @@ class LocationTrackingService : LifecycleService() {
     override fun onDestroy() {
         super.onDestroy()
         locationManager.removeUpdates(locationListener)
+        // Unregister mock location receiver
+        if (mockReceiverRegistered) {
+            try { unregisterReceiver(mockLocationReceiver) } catch (_: Exception) {}
+            mockReceiverRegistered = false
+        }
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
