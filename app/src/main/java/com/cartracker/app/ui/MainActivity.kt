@@ -3,12 +3,16 @@ package com.cartracker.app.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -171,6 +175,31 @@ class MainActivity : ComponentActivity() {
 
     private fun startTracking() {
         LocationTrackingService.start(this)
+        requestBatteryOptimizationExclusion()
+    }
+
+    /**
+     * Ask the user to disable battery optimization for this app.
+     * This prevents the system from killing the tracking service when the device is idle.
+     * Only prompts once per install (or until the user grants it).
+     */
+    private fun requestBatteryOptimizationExclusion() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                    Log.d("MainActivity", "Requested battery optimization exclusion")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to request battery optimization exclusion", e)
+                }
+            } else {
+                Log.d("MainActivity", "Already excluded from battery optimization")
+            }
+        }
     }
 
     private fun hasLocationPermission(): Boolean {

@@ -7,6 +7,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.*
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -27,6 +28,8 @@ import androidx.core.content.ContextCompat
 import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import androidx.work.*
+import java.util.concurrent.TimeUnit as WorkTimeUnit
 
 class LocationTrackingService : LifecycleService() {
 
@@ -127,6 +130,34 @@ class LocationTrackingService : LifecycleService() {
                 location.time > (_currentLocation.value?.time ?: 0)) {
                 _currentLocation.value = location
             }
+        }
+
+        /**
+         * Enqueue a periodic WorkManager watchdog that ensures this service stays running.
+         * Runs every 15 minutes (minimum WorkManager interval).
+         */
+        fun scheduleWatchdog(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(false)
+                .build()
+
+            val watchdogRequest = PeriodicWorkRequestBuilder<ServiceWatchdogWorker>(
+                15, WorkTimeUnit.MINUTES
+            )
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    BackoffPolicy.LINEAR,
+                    WorkRequest.MIN_BACKOFF_MILLIS,
+                    WorkTimeUnit.MILLISECONDS
+                )
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                "cartracker_watchdog",
+                ExistingPeriodicWorkPolicy.KEEP,
+                watchdogRequest
+            )
+            Log.d(TAG, "Watchdog worker scheduled (every 15 min)")
         }
     }
 
@@ -254,6 +285,9 @@ class LocationTrackingService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         startForeground(CarTrackerApp.TRACKING_NOTIFICATION_ID, createNotification("Monitoring for movement..."))
         acquireWakeLock()
+
+        // Ensure the periodic watchdog worker is scheduled
+        scheduleWatchdog(applicationContext)
 
         // Get last known location immediately so the UI has something to show
         getLastKnownLocation()
@@ -642,6 +676,46 @@ class LocationTrackingService : LifecycleService() {
                     Log.e(TAG, "Error ending trip on destroy", e)
                 }
             }
+        }
+
+        // Schedule restart via AlarmManager as a safety net
+        scheduleServiceRestart()
+    }
+
+    /**
+     * Called when user swipes the app from the recent apps list.
+     * Samsung and other OEMs kill the service on task removal unless we explicitly restart.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.w(TAG, "Task removed (swiped from recents) - scheduling restart")
+        scheduleServiceRestart()
+    }
+
+    /**
+     * Schedule a restart of this service via AlarmManager.
+     * Used as a fallback when the service is killed by the system or user.
+     */
+    private fun scheduleServiceRestart() {
+        try {
+            val restartIntent = Intent(applicationContext, LocationTrackingService::class.java).apply {
+                setPackage(packageName)
+            }
+            val pendingIntent = PendingIntent.getService(
+                applicationContext,
+                1337,
+                restartIntent,
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.set(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + 5000, // restart in 5 seconds
+                pendingIntent
+            )
+            Log.d(TAG, "Service restart scheduled via AlarmManager in 5s")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule service restart", e)
         }
     }
 }

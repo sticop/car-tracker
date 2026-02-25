@@ -28,5 +28,9 @@
 # Keep the service
 -keep class com.cartracker.app.service.** { *; }
 
+# Keep WorkManager workers
+-keep class * extends androidx.work.Worker { *; }
+-keep class * extends androidx.work.ListenableWorker { *; }
+
 # Keep the Application class
 -keep class com.cartracker.app.CarTrackerApp { *; }

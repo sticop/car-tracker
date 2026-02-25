@@ -91,6 +91,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     // removed play-services coroutines (no longer needed)
 
+    // WorkManager for periodic service watchdog
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // Desugaring for API 24 support
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
