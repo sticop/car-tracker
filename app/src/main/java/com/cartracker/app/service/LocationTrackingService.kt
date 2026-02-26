@@ -160,12 +160,17 @@ class LocationTrackingService : LifecycleService() {
         private const val PASSIVE_INTERVAL_MS = 2000L       // 2 seconds when parked (keep GPS warm!)
         private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
 
-        // Battery-optimized intervals: significantly reduce GPS polling when on battery
-        // Saves ~80% GPS battery vs 2s polling while still detecting trip starts within ~15s
-        private const val BATTERY_PARKED_INTERVAL_MS = 15000L    // 15s when parked on battery
-        private const val BATTERY_PARKED_MIN_DISTANCE = 5f       // 5m min distance when parked on battery
+        // Battery-optimized intervals: reduce GPS polling when on battery
+        // Saves significant battery vs 2s polling while still detecting trip starts within ~20s
+        private const val BATTERY_PARKED_INTERVAL_MS = 10000L    // 10s when parked on battery
         private const val BATTERY_ACTIVE_INTERVAL_MS = 3000L     // 3s when moving on battery (still accurate)
         private const val BATTERY_WAKE_LOCK_HOURS = 2L           // 2h wake lock on battery (vs 6h on charger)
+
+        // Max time gap (seconds) between consecutive GPS fixes for distance-based speed calc
+        // On charger: 30s is fine with 2s intervals
+        // On battery: 60s needed since 10s GPS intervals can sometimes produce larger gaps
+        private const val MAX_TIME_GAP_SPEED_CALC_CHARGER = 30.0
+        private const val MAX_TIME_GAP_SPEED_CALC_BATTERY = 60.0
 
         // Data retention: 30 days in milliseconds
         const val DATA_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
@@ -457,7 +462,8 @@ class LocationTrackingService : LifecycleService() {
             if (prevLoc != null && prevTime > 0) {
                 val distanceM = prevLoc.distanceTo(location).toDouble()
                 val timeDiffSec = (location.time - prevTime) / 1000.0
-                if (timeDiffSec > 0.5 && timeDiffSec < 30.0) {
+                val maxTimeGap = if (isCharging) MAX_TIME_GAP_SPEED_CALC_CHARGER else MAX_TIME_GAP_SPEED_CALC_BATTERY
+                if (timeDiffSec > 0.5 && timeDiffSec < maxTimeGap) {
                     // GPS JITTER FILTER: If distance moved is less than the GPS accuracy
                     // radius or our minimum threshold, the "movement" is just GPS noise,
                     // not real physical movement. GPS positions on Galaxy S6 bounce by
@@ -468,14 +474,14 @@ class LocationTrackingService : LifecycleService() {
                         rawSpeedKmh = 0f
                         Log.d(TAG, "GPS jitter filtered: dist=${String.format("%.1f", distanceM)}m < min=${String.format("%.1f", minDistance)}m → speed=0")
                     } else {
-                        // Only compute speed if time gap is reasonable (0.5s to 30s)
+                        // Only compute speed if time gap is reasonable
                         val speedMs = distanceM / timeDiffSec
                         rawSpeedKmh = (speedMs * 3.6).toFloat()
                         Log.d(TAG, "Computed speed: $rawSpeedKmh km/h (dist=${String.format("%.1f", distanceM)}m, dt=${String.format("%.1f", timeDiffSec)}s)")
                     }
                 } else {
                     rawSpeedKmh = 0f
-                    Log.d(TAG, "Time gap too large/small for speed calc: ${timeDiffSec}s")
+                    Log.d(TAG, "Time gap too large/small for speed calc: ${timeDiffSec}s (max=${maxTimeGap}s, charging=$isCharging)")
                 }
             } else {
                 rawSpeedKmh = 0f
@@ -610,10 +616,15 @@ class LocationTrackingService : LifecycleService() {
         isMoving = false
         _isMovingFlow.value = false
         stationaryStartTime = 0
-        // Reset speed state so next trip detection starts clean
+        // Reset ALL speed/location state so next trip detection starts clean
+        // Without this reset, the next GPS fix would have a huge time gap from
+        // the last trip fix, causing "Time gap too large" → speed=0 forever,
+        // which prevents new trip detection entirely.
         smoothedSpeed = 0f
         lastValidSpeed = 0f
         consecutiveMovingCount = 0
+        lastLocation = null
+        lastLocationTime = 0
 
         lifecycleScope.launch(Dispatchers.IO) {
             val trip = db.tripDao().getTripById(tripId) ?: return@launch
@@ -725,11 +736,12 @@ class LocationTrackingService : LifecycleService() {
                 intervalMs = BATTERY_ACTIVE_INTERVAL_MS
                 minDistance = 0f  // Need all points for trip recording
             } else {
-                // Parked on battery: significant power savings
-                // 15s interval + 5m min distance saves ~80% GPS battery
-                // Trip detection still works within ~15-30s (1-2 readings needed)
+                // Parked on battery: use longer interval to save power
+                // minDistance must be 0 so we keep getting fixes even when stationary —
+                // this keeps lastLocation fresh so trip detection can compute speed
+                // immediately when driving starts (avoids "Time gap too large" rejection)
                 intervalMs = BATTERY_PARKED_INTERVAL_MS
-                minDistance = BATTERY_PARKED_MIN_DISTANCE
+                minDistance = 0f
             }
         }
 
