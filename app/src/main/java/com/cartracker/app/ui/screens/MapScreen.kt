@@ -1,10 +1,13 @@
 package com.cartracker.app.ui.screens
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -27,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import com.cartracker.app.R
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.map.OfflineTileManager
@@ -70,6 +74,13 @@ fun MapScreen(viewModel: MainViewModel) {
         }
     }
 
+    // Pre-load car icon bitmap once (not on every draw call)
+    val carBitmap = remember {
+        val size = (48 * context.resources.displayMetrics.density).toInt()
+        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_car_marker)
+        drawable?.toBitmap(size, size)
+    }
+
     // Create MapView - osmdroid is already configured in CarTrackerApp.onCreate()
     val mapView = remember {
         MapView(context).apply {
@@ -85,6 +96,11 @@ fun MapScreen(viewModel: MainViewModel) {
             )
             // Enable hardware acceleration for smooth tiles
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+
+            // Improve tile rendering quality
+            isTilesScaledToDpi = true           // Scale tiles to screen DPI for sharpness
+            tilesScaleFactor = 1.0f              // Crisp 1:1 pixel mapping
+            setScrollableAreaLimitLatitude(85.05, -85.05, 0) // Prevent scroll past map edges
 
             // Use data connection only when online; offloads to cache when offline
             setUseDataConnection(OfflineTileManager.isNetworkAvailable(context))
@@ -169,7 +185,8 @@ fun MapScreen(viewModel: MainViewModel) {
                 geoPoint = GeoPoint(loc.latitude, loc.longitude),
                 accuracyMeters = loc.accuracy,
                 bearing = if (loc.hasBearing()) loc.bearing else null,
-                isMoving = isMoving
+                isMoving = isMoving,
+                carBitmap = carBitmap
             )
             mapView.overlays.add(gpsOverlay)
         }
@@ -187,7 +204,8 @@ fun MapScreen(viewModel: MainViewModel) {
                 geoPoint = GeoPoint(loc.latitude, loc.longitude),
                 accuracyMeters = loc.accuracy,
                 bearing = if (loc.hasBearing()) loc.bearing else null,
-                isMoving = isMoving
+                isMoving = isMoving,
+                carBitmap = carBitmap
             )
             mapView.overlays.add(gpsOverlay)
 
@@ -536,15 +554,16 @@ private fun getBoundingBox(points: List<LocationPoint>): BoundingBox {
 }
 
 /**
- * High-precision GPS location overlay.
- * Draws a blue dot with accuracy circle, bearing arrow when moving,
- * and a subtle outer glow — similar to Google Maps "my location" indicator.
+ * GPS location overlay that shows a car icon when moving
+ * and a blue dot when parked/stationary.
+ * Includes accuracy circle, bearing rotation, and subtle glow effects.
  */
 private class MyLocationOverlay(
     private val geoPoint: GeoPoint,
     private val accuracyMeters: Float,
     private val bearing: Float?,
-    private val isMoving: Boolean
+    private val isMoving: Boolean,
+    private val carBitmap: Bitmap?
 ) : Overlay() {
 
     // Accuracy circle fill
@@ -572,20 +591,8 @@ private class MyLocationOverlay(
         style = Paint.Style.FILL
     }
 
-    // Blue center dot
+    // Blue center dot (parked)
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF2196F3.toInt()
-        style = Paint.Style.FILL
-    }
-
-    // Moving dot is green
-    private val dotMovingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF4CAF50.toInt()
-        style = Paint.Style.FILL
-    }
-
-    // Bearing arrow paint
-    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF2196F3.toInt()
         style = Paint.Style.FILL
     }
@@ -593,6 +600,15 @@ private class MyLocationOverlay(
     // Inner highlight (pre-allocated to avoid allocation in draw())
     private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0x40FFFFFF
+        style = Paint.Style.FILL
+    }
+
+    // Paint for drawing the car bitmap with filtering for smooth rotation
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    // Car shadow paint
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x30000000
         style = Paint.Style.FILL
     }
 
@@ -622,36 +638,47 @@ private class MyLocationOverlay(
             canvas.drawCircle(x, y, accuracyRadiusPx, accuracyBorderPaint)
         }
 
-        // Draw bearing arrow when moving and bearing is available
-        if (isMoving && bearing != null) {
-            canvas.save()
-            canvas.rotate(bearing, x, y)
+        if (isMoving && carBitmap != null) {
+            // --- MOVING: Draw car icon ---
+            val bw = carBitmap.width.toFloat()
+            val bh = carBitmap.height.toFloat()
 
-            val arrowPath = Path().apply {
-                // Pointing up arrow (north = 0°)
-                moveTo(x, y - 36f)      // tip
-                lineTo(x - 14f, y + 8f) // bottom left
-                lineTo(x, y - 2f)       // inner notch
-                lineTo(x + 14f, y + 8f) // bottom right
-                close()
-            }
-            arrowPaint.color = if (isMoving) 0xFF4CAF50.toInt() else 0xFF2196F3.toInt()
-            canvas.drawPath(arrowPath, arrowPaint)
+            canvas.save()
+            // Rotate car to face the bearing direction
+            // The car icon points UP (north), so rotate by bearing degrees
+            val rotation = bearing ?: 0f
+            canvas.rotate(rotation, x, y)
+
+            // Draw shadow (offset slightly down-right)
+            canvas.drawOval(
+                x - bw / 2f + 2f, y - bh / 2f + 4f,
+                x + bw / 2f + 2f, y + bh / 2f + 4f,
+                shadowPaint
+            )
+
+            // Draw car bitmap centered on the location point
+            canvas.drawBitmap(
+                carBitmap,
+                x - bw / 2f,
+                y - bh / 2f,
+                bitmapPaint
+            )
 
             canvas.restore()
+        } else {
+            // --- PARKED: Draw blue dot with glow ---
+
+            // Draw outer glow
+            canvas.drawCircle(x, y, 18f, glowPaint)
+
+            // Draw white border (outer ring of dot)
+            canvas.drawCircle(x, y, 14f, dotBorderPaint)
+
+            // Draw blue center dot
+            canvas.drawCircle(x, y, 11f, dotPaint)
+
+            // Draw inner highlight (gives 3D look)
+            canvas.drawCircle(x - 3f, y - 3f, 5f, highlightPaint)
         }
-
-        // Draw outer glow
-        canvas.drawCircle(x, y, 18f, glowPaint)
-
-        // Draw white border (outer ring of dot)
-        canvas.drawCircle(x, y, 14f, dotBorderPaint)
-
-        // Draw center dot
-        val centerPaint = if (isMoving) dotMovingPaint else dotPaint
-        canvas.drawCircle(x, y, 11f, centerPaint)
-
-        // Draw inner highlight (gives 3D look)
-        canvas.drawCircle(x - 3f, y - 3f, 5f, highlightPaint)
     }
 }

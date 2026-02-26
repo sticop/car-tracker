@@ -30,8 +30,9 @@ class CarTrackerApp : Application() {
             // Keep cached tiles for 30 days
             expirationOverrideDuration = 30L * 24 * 60 * 60 * 1000
 
-            // Extended expiration so tiles work offline even if "expired"
-            tileFileSystemCacheMaxBytes = 500L * 1024 * 1024
+            // Tile download quality settings
+            tileDownloadThreads = 4.toShort()       // Parallel tile downloads for faster loading
+            tileDownloadMaxQueueSize = 40.toShort()  // Larger queue for smoother panning
 
             // Set HTTP timeouts for tile downloads
             setHttpProxy(null) // no proxy

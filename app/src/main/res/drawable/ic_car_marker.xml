@@ -1,0 +1,56 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Shadow ellipse -->
+    <path
+        android:fillColor="#22000000"
+        android:pathData="M24,46 C30,46 34,45 34,44 C34,43 30,42 24,42 C18,42 14,43 14,44 C14,45 18,46 24,46Z" />
+
+    <!-- Car body - main shape -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M12,28 L12,36 C12,37.1 12.9,38 14,38 L34,38 C35.1,38 36,37.1 36,36 L36,28 L12,28Z" />
+
+    <!-- Car roof/cabin -->
+    <path
+        android:fillColor="#1E88E5"
+        android:pathData="M14,28 L16,20 C16.4,18.8 17.5,18 18.8,18 L29.2,18 C30.5,18 31.6,18.8 32,20 L34,28 L14,28Z" />
+
+    <!-- Windshield -->
+    <path
+        android:fillColor="#BBDEFB"
+        android:pathData="M16.5,27 L18,21 C18.2,20.4 18.8,20 19.4,20 L28.6,20 C29.2,20 29.8,20.4 30,21 L31.5,27 L16.5,27Z" />
+
+    <!-- Front headlights -->
+    <path
+        android:fillColor="#FFF9C4"
+        android:pathData="M13,30 C13,29.4 13.4,29 14,29 L17,29 C17.6,29 18,29.4 18,30 C18,30.6 17.6,31 17,31 L14,31 C13.4,31 13,30.6 13,30Z" />
+    <path
+        android:fillColor="#FFF9C4"
+        android:pathData="M30,30 C30,29.4 30.4,29 31,29 L34,29 C34.6,29 35,29.4 35,30 C35,30.6 34.6,31 34,31 L31,31 C30.4,31 30,30.6 30,30Z" />
+
+    <!-- Wheels -->
+    <path
+        android:fillColor="#37474F"
+        android:pathData="M16,38 C16,36.3 14.7,35 13,35 C11.3,35 10,36.3 10,38 C10,39.7 11.3,41 13,41 C14.7,41 16,39.7 16,38Z" />
+    <path
+        android:fillColor="#37474F"
+        android:pathData="M38,38 C38,36.3 36.7,35 35,35 C33.3,35 32,36.3 32,38 C32,39.7 33.3,41 35,41 C36.7,41 38,39.7 38,38Z" />
+
+    <!-- Wheel hubcaps -->
+    <path
+        android:fillColor="#78909C"
+        android:pathData="M14.5,38 C14.5,37.2 13.8,36.5 13,36.5 C12.2,36.5 11.5,37.2 11.5,38 C11.5,38.8 12.2,39.5 13,39.5 C13.8,39.5 14.5,38.8 14.5,38Z" />
+    <path
+        android:fillColor="#78909C"
+        android:pathData="M36.5,38 C36.5,37.2 35.8,36.5 35,36.5 C34.2,36.5 33.5,37.2 33.5,38 C33.5,38.8 34.2,39.5 35,39.5 C35.8,39.5 36.5,38.8 36.5,38Z" />
+
+    <!-- Roof rack / top detail -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M20,18 L28,18 L28,17 C28,16.4 27.6,16 27,16 L21,16 C20.4,16 20,16.4 20,17 L20,18Z" />
+
+</vector>
