@@ -124,12 +124,14 @@ object OfflineTileManager {
     }
 
     /**
-     * Download a single tile from OpenStreetMap
+     * Download a single tile from CartoDB Dark Matter @2x
      */
     private fun downloadTile(zoom: Int, x: Int, y: Int, destFile: File): Boolean {
         try {
-            // MAPNIK tile URL pattern
-            val url = "https://tile.openstreetmap.org/$zoom/$x/$y.png"
+            // CartoDB Dark Matter @2x for high-res dark tiles
+            val servers = arrayOf("a", "b", "c", "d")
+            val server = servers[(x + y) % servers.size]
+            val url = "https://$server.basemaps.cartocdn.com/dark_all/$zoom/$x/$y@2x.png"
             val connection = URL(url).openConnection() as HttpURLConnection
             connection.apply {
                 connectTimeout = 5000
@@ -164,7 +166,7 @@ object OfflineTileManager {
      * Get the tile cache directory used by osmdroid
      */
     fun getTileCacheDir(context: Context): File {
-        return File(context.cacheDir, "osmdroid/tiles/Mapnik")
+        return File(context.cacheDir, "osmdroid/tiles/CartoDarkMatter")
     }
 
     /**

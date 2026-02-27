@@ -48,13 +48,35 @@ import com.cartracker.app.ui.TimeFilter
 import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
+
+// CartoDB Dark Matter @2x — high-res dark tiles that match the Uber theme
+private val CartoDarkMatter = object : OnlineTileSourceBase(
+    "CartoDarkMatter",
+    0, 20, 512, ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/dark_all/",
+        "https://b.basemaps.cartocdn.com/dark_all/",
+        "https://c.basemaps.cartocdn.com/dark_all/",
+        "https://d.basemaps.cartocdn.com/dark_all/"
+    ),
+    "Map tiles by CartoDB, under CC BY 3.0. Data by OpenStreetMap, under ODbL."
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return "${baseUrl}$zoom/$x/$y@2x.png"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +111,7 @@ fun MapScreen(viewModel: MainViewModel) {
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(CartoDarkMatter)
             setMultiTouchControls(true)
             @Suppress("DEPRECATION")
             setBuiltInZoomControls(false)
@@ -99,7 +121,8 @@ fun MapScreen(viewModel: MainViewModel) {
                 org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER
             )
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-            isTilesScaledToDpi = true
+            // @2x tiles are 512px — let osmdroid treat them as 2x density
+            isTilesScaledToDpi = false
             tilesScaleFactor = 1.0f
             setScrollableAreaLimitLatitude(85.05, -85.05, 0)
             setUseDataConnection(OfflineTileManager.isNetworkAvailable(context))
