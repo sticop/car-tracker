@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cartracker.app.ui.MainViewModel
+import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
 
@@ -41,28 +43,31 @@ fun DashboardScreen(viewModel: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(UberBlack)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Header
         Text(
-            text = "Live Dashboard",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
+            text = "Live",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Black,
+            color = UberWhite,
+            letterSpacing = (-0.5).sp,
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Service status
-        Card(
+        // Tracking status pill
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isTracking) Color(0xFF1B5E20).copy(alpha = 0.2f)
-                else Color(0xFFB71C1C).copy(alpha = 0.2f)
-            )
+            shape = RoundedCornerShape(14.dp),
+            color = if (isTracking) UberGreen.copy(alpha = 0.1f) else UberRed.copy(alpha = 0.1f)
         ) {
             Row(
                 modifier = Modifier
@@ -71,38 +76,52 @@ fun DashboardScreen(viewModel: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
+                val pulseAlpha by rememberInfiniteTransition(label = "trackPulse").animateFloat(
+                    initialValue = 1f,
+                    targetValue = 0.3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1000),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "trackPulseAlpha"
+                )
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
+                        .size(8.dp)
                         .clip(CircleShape)
-                        .background(if (isTracking) Color(0xFF4CAF50) else Color(0xFFF44336))
+                        .background(
+                            (if (isTracking) UberGreen else UberRed).copy(alpha = pulseAlpha)
+                        )
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isTracking) "Tracking Active" else "Tracking Off",
-                    fontWeight = FontWeight.Medium,
-                    color = if (isTracking) Color(0xFF4CAF50) else Color(0xFFF44336)
+                    text = if (isTracking) "TRACKING ACTIVE" else "TRACKING OFF",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.sp,
+                    color = if (isTracking) UberGreen else UberRed
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // Large speedometer
-        SpeedometerGauge(
+        // Uber-style speedometer
+        UberSpeedometer(
             speed = currentSpeed,
             maxSpeed = 200f,
-            modifier = Modifier.size(250.dp)
+            modifier = Modifier.size(260.dp)
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Speed category
         Text(
             text = SpeedColorUtils.getSpeedCategory(currentSpeed),
-            style = MaterialTheme.typography.titleMedium,
-            color = Color(SpeedColorUtils.getColorForSpeed(currentSpeed)),
-            fontWeight = FontWeight.Bold
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+            color = Color(SpeedColorUtils.getColorForSpeed(currentSpeed))
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -110,88 +129,87 @@ fun DashboardScreen(viewModel: MainViewModel) {
         // Status cards
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            InfoCard(
+            UberDashCard(
                 modifier = Modifier.weight(1f),
                 title = "Status",
                 value = if (isMoving) "Driving" else "Parked",
-                icon = if (isMoving) Icons.Filled.DirectionsCar else Icons.Filled.LocalParking,
-                valueColor = if (isMoving) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                icon = if (isMoving) Icons.Rounded.DirectionsCar else Icons.Rounded.LocalParking,
+                accentColor = if (isMoving) UberGreen else UberOrange
             )
-            InfoCard(
+            UberDashCard(
                 modifier = Modifier.weight(1f),
                 title = "Current Trip",
                 value = currentTripId?.let { "#$it" } ?: "None",
-                icon = Icons.Filled.Route,
-                valueColor = MaterialTheme.colorScheme.primary
+                icon = Icons.Rounded.Route,
+                accentColor = UberGreen
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Location info
         currentLocation?.let { loc ->
-            Card(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                shape = RoundedCornerShape(16.dp),
+                color = UberCardDark
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Current Location",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.MyLocation,
+                            contentDescription = null,
+                            tint = UberGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Location",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = UberWhite
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(
-                                text = "Lat: ${String.format("%.6f", loc.latitude)}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = "Lon: ${String.format("%.6f", loc.longitude)}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            UberLocLabel("Lat", String.format("%.6f", loc.latitude))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            UberLocLabel("Lon", String.format("%.6f", loc.longitude))
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "Alt: ${String.format("%.0f", loc.altitude)}m",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = "Accuracy: ${String.format("%.0f", loc.accuracy)}m",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            UberLocLabel("Alt", "${String.format("%.0f", loc.altitude)}m")
+                            Spacer(modifier = Modifier.height(4.dp))
+                            UberLocLabel("Acc", "${String.format("%.0f", loc.accuracy)}m")
                         }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Today's summary
-        Card(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            shape = RoundedCornerShape(16.dp),
+            color = UberCardDark
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Today's Summary",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    text = "Today",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UberWhite
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
@@ -200,64 +218,77 @@ fun DashboardScreen(viewModel: MainViewModel) {
                         Text(
                             text = "${todayStats.tripCount}",
                             fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontWeight = FontWeight.Black,
+                            color = UberGreen
                         )
-                        Text("Trips", style = MaterialTheme.typography.labelSmall)
+                        Text("Trips", fontSize = 11.sp, color = UberTextTertiary)
                     }
+                    // Divider
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(48.dp)
+                            .background(UberDivider)
+                    )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = FormatUtils.formatDistance(todayStats.totalDistanceMeters),
                             fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontWeight = FontWeight.Black,
+                            color = UberGreen
                         )
-                        Text("Distance", style = MaterialTheme.typography.labelSmall)
+                        Text("Distance", fontSize = 11.sp, color = UberTextTertiary)
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Speed proof card (for police)
-        Card(
+        // Speed evidence card
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1A237E).copy(alpha = 0.1f)
-            )
+            shape = RoundedCornerShape(16.dp),
+            color = UberBlue.copy(alpha = 0.08f)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Icon(
-                        Icons.Filled.Shield,
+                        Icons.Rounded.Shield,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        tint = UberBlue,
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Speed Evidence Log",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        text = "Speed Evidence",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = UberWhite
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Your speed is continuously recorded with GPS precision. " +
-                            "In case of a traffic stop, show this app to demonstrate your actual speed. " +
-                            "Select any trip from the Trips tab to see detailed speed data at every point.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Speed is recorded with GPS precision. Show this app during a traffic stop to prove your actual speed. View trip details for point-by-point data.",
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = UberTextSecondary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "GPS Accuracy: ${currentLocation?.accuracy?.let { "${it.toInt()}m" } ?: "N/A"}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = UberCardDark
+                ) {
+                    Text(
+                        text = "GPS Accuracy: ${currentLocation?.accuracy?.let { "${it.toInt()}m" } ?: "N/A"}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UberBlue
+                    )
+                }
             }
         }
 
@@ -266,7 +297,16 @@ fun DashboardScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-fun SpeedometerGauge(
+private fun UberLocLabel(label: String, value: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = UberTextTertiary)
+        Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = UberWhite)
+    }
+}
+
+// ── Uber-style Speedometer ──
+@Composable
+fun UberSpeedometer(
     speed: Float,
     maxSpeed: Float,
     modifier: Modifier = Modifier
@@ -278,8 +318,6 @@ fun SpeedometerGauge(
     )
 
     val speedColor = Color(SpeedColorUtils.getColorForSpeed(animatedSpeed))
-    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
-    val textColor = MaterialTheme.colorScheme.onSurface
 
     Box(
         modifier = modifier,
@@ -288,12 +326,12 @@ fun SpeedometerGauge(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val sweepAngle = 240f
             val startAngle = 150f
-            val strokeWidth = 24.dp.toPx()
+            val strokeWidth = 20.dp.toPx()
             val padding = strokeWidth / 2 + 8.dp.toPx()
 
-            // Background arc
+            // Background arc — dark
             drawArc(
-                color = backgroundColor,
+                color = UberCardLight,
                 startAngle = startAngle,
                 sweepAngle = sweepAngle,
                 useCenter = false,
@@ -302,7 +340,7 @@ fun SpeedometerGauge(
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
 
-            // Speed arc
+            // Speed arc — green/colored
             val speedSweep = (animatedSpeed / maxSpeed).coerceIn(0f, 1f) * sweepAngle
             drawArc(
                 color = speedColor,
@@ -315,37 +353,36 @@ fun SpeedometerGauge(
             )
         }
 
-        // Speed text
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = String.format("%.0f", animatedSpeed),
-                fontSize = 56.sp,
-                fontWeight = FontWeight.Bold,
-                color = speedColor
+                fontSize = 60.sp,
+                fontWeight = FontWeight.Black,
+                color = UberWhite,
+                letterSpacing = (-2).sp
             )
             Text(
                 text = "km/h",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = UberTextSecondary
             )
         }
     }
 }
 
 @Composable
-fun InfoCard(
+private fun UberDashCard(
     modifier: Modifier = Modifier,
     title: String,
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
+    accentColor: Color = UberGreen
 ) {
-    Card(
+    Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        shape = RoundedCornerShape(16.dp),
+        color = UberCardDark
     ) {
         Column(
             modifier = Modifier
@@ -356,22 +393,35 @@ fun InfoCard(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = valueColor,
-                modifier = Modifier.size(28.dp)
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = value,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium,
-                color = valueColor,
+                fontSize = 16.sp,
+                color = accentColor,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = UberTextTertiary
             )
         }
     }
+}
+
+// Keep InfoCard for backward compat
+@Composable
+fun InfoCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    valueColor: Color = UberWhite
+) {
+    UberDashCard(modifier = modifier, title = title, value = value, icon = icon, accentColor = valueColor)
 }

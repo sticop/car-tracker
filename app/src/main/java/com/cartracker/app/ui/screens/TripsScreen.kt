@@ -1,14 +1,19 @@
 package com.cartracker.app.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.cartracker.app.data.Trip
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.TimeFilter
+import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
 
@@ -39,95 +45,74 @@ fun TripsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(UberBlack)
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp)
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Header
         Text(
             text = "Your Trips",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Black,
+            color = UberWhite,
+            letterSpacing = (-0.5).sp
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Today's summary card
-        Card(
+        // Today's summary — Uber-style dark cards
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatItem(
-                    icon = Icons.Filled.Route,
-                    value = "${todayStats.tripCount}",
-                    label = "Trips Today"
-                )
-                StatItem(
-                    icon = Icons.Filled.Straighten,
-                    value = FormatUtils.formatDistance(todayStats.totalDistanceMeters),
-                    label = "Distance"
-                )
-                StatItem(
-                    icon = if (isMoving) Icons.Filled.DirectionsCar else Icons.Filled.LocalParking,
-                    value = if (isMoving) "Active" else "Parked",
-                    label = "Status",
-                    valueColor = if (isMoving) Color(0xFF4CAF50) else Color(0xFFFF9800)
-                )
-            }
+            UberMiniStat(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Rounded.Route,
+                value = "${todayStats.tripCount}",
+                label = "Today"
+            )
+            UberMiniStat(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Rounded.Straighten,
+                value = FormatUtils.formatDistance(todayStats.totalDistanceMeters),
+                label = "Distance"
+            )
+            UberMiniStat(
+                modifier = Modifier.weight(1f),
+                icon = if (isMoving) Icons.Rounded.DirectionsCar else Icons.Rounded.LocalParking,
+                value = if (isMoving) "Active" else "Parked",
+                label = "Status",
+                accentColor = if (isMoving) UberGreen else UberOrange
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Time filter
-        Text(
-            text = "Filter by time",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
+        // Time filter — horizontal scroll pills
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            TimeFilter.entries.take(4).forEach { filter ->
-                FilterChip(
-                    onClick = { viewModel.setTimeFilter(filter) },
-                    label = { Text(filter.label, fontSize = 12.sp) },
-                    selected = timeFilter == filter,
-                    modifier = Modifier.weight(1f),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.White
+            TimeFilter.entries.forEach { filter ->
+                val isSelected = timeFilter == filter
+                Surface(
+                    modifier = Modifier.clickable { viewModel.setTimeFilter(filter) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) UberGreen else UberCardDark
+                ) {
+                    Text(
+                        text = filter.label,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.Black else UberTextSecondary
                     )
-                )
+                }
             }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TimeFilter.entries.drop(4).forEach { filter ->
-                FilterChip(
-                    onClick = { viewModel.setTimeFilter(filter) },
-                    label = { Text(filter.label, fontSize = 12.sp) },
-                    selected = timeFilter == filter,
-                    modifier = Modifier.weight(1f),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.White
-                    )
-                )
-            }
-            // Fill remaining space
-            Spacer(modifier = Modifier.weight(2f))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -141,38 +126,50 @@ fun TripsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Filled.DirectionsCar,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = UberCardDark,
+                        modifier = Modifier.size(80.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Rounded.DirectionsCar,
+                                contentDescription = null,
+                                modifier = Modifier.size(36.dp),
+                                tint = UberTextTertiary
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No trips in this period",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "No trips yet",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = UberWhite
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Start driving to record your first trip!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        text = "Start driving to see your trips here",
+                        fontSize = 13.sp,
+                        color = UberTextTertiary
                     )
                 }
             }
         } else {
+            // Trip count
             Text(
                 text = "${trips.size} trip${if (trips.size != 1) "s" else ""}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = UberTextTertiary
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                // Group trips by day
                 val groupedTrips = trips.groupBy { trip ->
                     FormatUtils.getRelativeDay(trip.startTime)
                 }
@@ -180,11 +177,12 @@ fun TripsScreen(
                 groupedTrips.forEach { (day, dayTrips) ->
                     item {
                         Text(
-                            text = day,
-                            style = MaterialTheme.typography.titleSmall,
+                            text = day.uppercase(),
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(vertical = 4.dp)
+                            letterSpacing = 1.sp,
+                            color = UberGreen,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
                         )
                     }
 
@@ -193,7 +191,7 @@ fun TripsScreen(
                         key = { trip -> trip.id }
                     ) { trip ->
                         val tripIndex = trips.indexOf(trip)
-                        TripCard(
+                        UberTripCard(
                             trip = trip,
                             tripNumber = trips.size - tripIndex,
                             isCurrentTrip = trip.id == currentTripId,
@@ -207,172 +205,213 @@ fun TripsScreen(
 }
 
 @Composable
-fun TripCard(
+private fun UberTripCard(
     trip: Trip,
     tripNumber: Int,
     isCurrentTrip: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    val bgColor by animateColorAsState(
+        targetValue = if (isCurrentTrip) UberGreen.copy(alpha = 0.08f) else UberCardDark,
+        animationSpec = tween(300),
+        label = "tripBg"
+    )
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isCurrentTrip)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(if (isCurrentTrip) 4.dp else 1.dp)
+        shape = RoundedCornerShape(16.dp),
+        color = bgColor
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Trip number badge
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(
-                        if (isCurrentTrip) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        if (isCurrentTrip) UberGreen
+                        else UberCardLight
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 if (isCurrentTrip) {
                     Icon(
-                        Icons.Filled.DirectionsCar,
+                        Icons.Rounded.DirectionsCar,
                         contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp)
                     )
                 } else {
                     Text(
                         text = "#$tripNumber",
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        fontSize = 13.sp,
+                        color = UberWhite
                     )
                 }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Trip details
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isCurrentTrip) "Trip #$tripNumber (Active)" else "Trip #$tripNumber",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleSmall
+                        text = if (isCurrentTrip) "Trip #$tripNumber" else "Trip #$tripNumber",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = UberWhite
                     )
-                    Text(
-                        text = FormatUtils.formatDuration(
-                            if (trip.isActive) System.currentTimeMillis() - trip.startTime
-                            else trip.durationMillis
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (isCurrentTrip) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = UberGreen.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "LIVE",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = UberGreen
+                            )
+                        }
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
-                // Time range
                 Text(
                     text = "${FormatUtils.formatTime(trip.startTime)} → ${
                         trip.endTime?.let { FormatUtils.formatTime(it) } ?: "Now"
                     }",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = UberTextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Stats row
+                // Stats — inline pills
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    TripStatChip(
-                        icon = Icons.Filled.Straighten,
-                        text = FormatUtils.formatDistance(trip.distanceMeters)
+                    UberStatPill(
+                        text = FormatUtils.formatDistance(trip.distanceMeters),
+                        icon = Icons.Rounded.Straighten
                     )
-                    TripStatChip(
-                        icon = Icons.Filled.Speed,
-                        text = "Max: ${FormatUtils.formatSpeed(trip.maxSpeedKmh)}",
+                    UberStatPill(
+                        text = FormatUtils.formatSpeed(trip.maxSpeedKmh),
+                        icon = Icons.Rounded.Speed,
                         textColor = Color(SpeedColorUtils.getColorForSpeed(trip.maxSpeedKmh))
                     )
-                    TripStatChip(
-                        icon = Icons.Filled.AvTimer,
-                        text = "Avg: ${FormatUtils.formatSpeed(trip.avgSpeedKmh)}"
+                    UberStatPill(
+                        text = FormatUtils.formatDuration(
+                            if (trip.isActive) System.currentTimeMillis() - trip.startTime
+                            else trip.durationMillis
+                        ),
+                        icon = Icons.Rounded.Timer
                     )
                 }
             }
 
             Icon(
-                Icons.Filled.ChevronRight,
+                Icons.Rounded.ChevronRight,
                 contentDescription = "View trip",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = UberTextTertiary,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
 }
 
 @Composable
-fun TripStatChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun UberStatPill(
     text: String,
-    textColor: Color = MaterialTheme.colorScheme.onSurface
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    textColor: Color = UberTextSecondary
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
         Icon(
             icon,
             contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            modifier = Modifier.size(12.dp),
+            tint = UberTextTertiary
         )
-        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
             color = textColor
         )
     }
 }
 
 @Composable
+private fun UberMiniStat(
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    label: String,
+    accentColor: Color = UberGreen
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = UberCardDark
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = value,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = UberWhite
+            )
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = UberTextTertiary
+            )
+        }
+    }
+}
+
+// Keep StatItem for backward compat (used elsewhere?)
+@Composable
 fun StatItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     value: String,
     label: String,
-    valueColor: Color = MaterialTheme.colorScheme.onPrimaryContainer
+    valueColor: Color = UberWhite
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
+        Icon(icon, contentDescription = null, tint = UberGreen, modifier = Modifier.size(24.dp))
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium,
-            color = valueColor
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-        )
+        Text(text = value, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = valueColor)
+        Text(text = label, fontSize = 11.sp, color = UberTextTertiary)
     }
 }

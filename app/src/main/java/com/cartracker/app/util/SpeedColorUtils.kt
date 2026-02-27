@@ -1,28 +1,28 @@
 package com.cartracker.app.util
 
 object SpeedColorUtils {
-    // Returns a color based on speed (green -> yellow -> orange -> red)
+    // Uber-tinted speed palette: green → yellow → orange → red → purple
     fun getColorForSpeed(speedKmh: Float): Int {
         return when {
-            speedKmh < 30 -> 0xFF4CAF50.toInt()   // Green - slow
-            speedKmh < 50 -> 0xFF8BC34A.toInt()    // Light green
-            speedKmh < 70 -> 0xFFFFEB3B.toInt()    // Yellow
-            speedKmh < 90 -> 0xFFFF9800.toInt()    // Orange
-            speedKmh < 110 -> 0xFFFF5722.toInt()   // Deep orange
-            speedKmh < 130 -> 0xFFF44336.toInt()   // Red
-            else -> 0xFF9C27B0.toInt()              // Purple - very fast
+            speedKmh < 30 -> 0xFF06C167.toInt()   // Uber Green - slow
+            speedKmh < 50 -> 0xFF7EC489.toInt()   // Mint - city
+            speedKmh < 70 -> 0xFFFFC043.toInt()   // Uber Yellow - urban
+            speedKmh < 90 -> 0xFFFF9500.toInt()   // Amber - suburban
+            speedKmh < 110 -> 0xFFFF6B00.toInt()  // Deep orange - highway
+            speedKmh < 130 -> 0xFFE11900.toInt()  // Uber Red - fast
+            else -> 0xFFCB2BD5.toInt()             // Purple - very fast
         }
     }
 
     fun getSpeedCategory(speedKmh: Float): String {
         return when {
-            speedKmh < 30 -> "City (slow)"
-            speedKmh < 50 -> "City"
-            speedKmh < 70 -> "Urban"
-            speedKmh < 90 -> "Suburban"
-            speedKmh < 110 -> "Highway"
-            speedKmh < 130 -> "Fast Highway"
-            else -> "Very Fast"
+            speedKmh < 30 -> "SLOW"
+            speedKmh < 50 -> "CITY"
+            speedKmh < 70 -> "URBAN"
+            speedKmh < 90 -> "SUBURBAN"
+            speedKmh < 110 -> "HIGHWAY"
+            speedKmh < 130 -> "FAST"
+            else -> "VERY FAST"
         }
     }
 }
