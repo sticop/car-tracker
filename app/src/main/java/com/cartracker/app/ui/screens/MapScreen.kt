@@ -318,7 +318,7 @@ fun MapScreen(viewModel: MainViewModel) {
         Row(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(top = 60.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 66.dp, start = 12.dp, end = 12.dp)
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .align(Alignment.TopStart),
