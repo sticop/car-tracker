@@ -18,7 +18,7 @@ object WebReporter {
     private const val TAG = "WebReporter"
 
     // ─── Configuration ───────────────────────────────────────────────
-    private const val API_BASE = "https://tracker.valoraconsulting.net/api.php"
+    private const val API_BASE = "https://valoraconsulting.net/cartracker/api.php"
     private const val API_KEY = "ctrk_9f8e7d6c5b4a3210_xK7mP2nQ"
     private const val DEVICE_ID = "default"
     private const val CONNECT_TIMEOUT = 5000

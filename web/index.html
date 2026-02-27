@@ -1,147 +1,160 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Car Tracker</title>
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
     <!-- Inter Font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-</head>
-<body>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>"
+    />
+  </head>
+  <body>
     <!-- Top Navigation -->
     <nav class="top-nav">
-        <div class="nav-brand">
-            <div class="brand-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="8" fill="#06C167"/>
-                    <circle cx="12" cy="12" r="4" fill="#000"/>
-                </svg>
-            </div>
-            <span class="brand-text">Car Tracker</span>
+      <div class="nav-brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="8" fill="#06C167" />
+            <circle cx="12" cy="12" r="4" fill="#000" />
+          </svg>
         </div>
-        <div class="nav-status" id="connectionStatus">
-            <span class="status-dot offline"></span>
-            <span class="status-text">Connecting...</span>
-        </div>
+        <span class="brand-text">Car Tracker</span>
+      </div>
+      <div class="nav-status" id="connectionStatus">
+        <span class="status-dot offline"></span>
+        <span class="status-text">Connecting...</span>
+      </div>
     </nav>
 
     <!-- Main Layout -->
     <div class="main-layout">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <!-- Live Status Card -->
-            <div class="card status-card" id="statusCard">
-                <div class="card-header">
-                    <h3>Live Status</h3>
-                    <span class="badge" id="statusBadge">OFFLINE</span>
-                </div>
-                <div class="speed-display">
-                    <span class="speed-value" id="currentSpeed">0</span>
-                    <span class="speed-unit">km/h</span>
-                </div>
-                <div class="status-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Accuracy</span>
-                        <span class="detail-value" id="accuracy">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Bearing</span>
-                        <span class="detail-value" id="bearing">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Altitude</span>
-                        <span class="detail-value" id="altitude">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Charging</span>
-                        <span class="detail-value" id="charging">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Last Update</span>
-                        <span class="detail-value" id="lastUpdate">--</span>
-                    </div>
-                </div>
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Live Status Card -->
+        <div class="card status-card" id="statusCard">
+          <div class="card-header">
+            <h3>Live Status</h3>
+            <span class="badge" id="statusBadge">OFFLINE</span>
+          </div>
+          <div class="speed-display">
+            <span class="speed-value" id="currentSpeed">0</span>
+            <span class="speed-unit">km/h</span>
+          </div>
+          <div class="status-details">
+            <div class="detail-row">
+              <span class="detail-label">Accuracy</span>
+              <span class="detail-value" id="accuracy">--</span>
             </div>
-
-            <!-- Today's Stats -->
-            <div class="card stats-card">
-                <div class="card-header">
-                    <h3>Today</h3>
-                </div>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <span class="stat-value" id="todayTrips">0</span>
-                        <span class="stat-label">Trips</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value" id="todayDistance">0</span>
-                        <span class="stat-label">km</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value" id="todayDuration">0</span>
-                        <span class="stat-label">min</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value" id="todayMaxSpeed">0</span>
-                        <span class="stat-label">max km/h</span>
-                    </div>
-                </div>
+            <div class="detail-row">
+              <span class="detail-label">Bearing</span>
+              <span class="detail-value" id="bearing">--</span>
             </div>
-
-            <!-- Time Filter -->
-            <div class="filter-pills">
-                <button class="pill" data-filter="1h">1h</button>
-                <button class="pill" data-filter="6h">6h</button>
-                <button class="pill active" data-filter="24h">24h</button>
-                <button class="pill" data-filter="3d">3d</button>
-                <button class="pill" data-filter="7d">7d</button>
-                <button class="pill" data-filter="30d">30d</button>
+            <div class="detail-row">
+              <span class="detail-label">Altitude</span>
+              <span class="detail-value" id="altitude">--</span>
             </div>
-
-            <!-- Trips List -->
-            <div class="card trips-card">
-                <div class="card-header">
-                    <h3>Trips</h3>
-                    <span class="trip-count" id="tripCount">0</span>
-                </div>
-                <div class="trips-list" id="tripsList">
-                    <div class="empty-state">No trips yet</div>
-                </div>
+            <div class="detail-row">
+              <span class="detail-label">Charging</span>
+              <span class="detail-value" id="charging">--</span>
             </div>
-        </aside>
-
-        <!-- Map -->
-        <div class="map-container">
-            <div id="map"></div>
-            <!-- Map Controls -->
-            <div class="map-controls">
-                <button class="map-btn" id="centerBtn" title="Center on device">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
-                    </svg>
-                </button>
-                <button class="map-btn" id="fitTripsBtn" title="Fit all trips">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/>
-                    </svg>
-                </button>
+            <div class="detail-row">
+              <span class="detail-label">Last Update</span>
+              <span class="detail-value" id="lastUpdate">--</span>
             </div>
-            <!-- Speed Overlay -->
-            <div class="speed-overlay" id="speedOverlay">
-                <span class="speed-overlay-value" id="overlaySpeed">0</span>
-                <span class="speed-overlay-unit">km/h</span>
-            </div>
+          </div>
         </div>
+
+        <!-- Today's Stats -->
+        <div class="card stats-card">
+          <div class="card-header">
+            <h3>Today</h3>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-value" id="todayTrips">0</span>
+              <span class="stat-label">Trips</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="todayDistance">0</span>
+              <span class="stat-label">km</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="todayDuration">0</span>
+              <span class="stat-label">min</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="todayMaxSpeed">0</span>
+              <span class="stat-label">max km/h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Time Filter -->
+        <div class="filter-pills">
+          <button class="pill" data-filter="1h">1h</button>
+          <button class="pill" data-filter="6h">6h</button>
+          <button class="pill active" data-filter="24h">24h</button>
+          <button class="pill" data-filter="3d">3d</button>
+          <button class="pill" data-filter="7d">7d</button>
+          <button class="pill" data-filter="30d">30d</button>
+        </div>
+
+        <!-- Trips List -->
+        <div class="card trips-card">
+          <div class="card-header">
+            <h3>Trips</h3>
+            <span class="trip-count" id="tripCount">0</span>
+          </div>
+          <div class="trips-list" id="tripsList">
+            <div class="empty-state">No trips yet</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Map -->
+      <div class="map-container">
+        <div id="map"></div>
+        <!-- Map Controls -->
+        <div class="map-controls">
+          <button class="map-btn" id="centerBtn" title="Center on device">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"
+              />
+            </svg>
+          </button>
+          <button class="map-btn" id="fitTripsBtn" title="Fit all trips">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"
+              />
+            </svg>
+          </button>
+        </div>
+        <!-- Speed Overlay -->
+        <div class="speed-overlay" id="speedOverlay">
+          <span class="speed-overlay-value" id="overlaySpeed">0</span>
+          <span class="speed-overlay-unit">km/h</span>
+        </div>
+      </div>
     </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>
-</body>
+  </body>
 </html>
