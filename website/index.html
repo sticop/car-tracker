@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCarGPS – Real-Time Vehicle Tracking for Android</title>
+    <meta name="description" content="Track your car in real-time with AutoCarGPS. Live GPS tracking, trip history, speed monitoring & web dashboard. Free 3-day trial, then just €19.99.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container nav-container">
+            <a href="#" class="logo">
+                <span class="logo-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="#06C167"/>
+                        <path d="M16 7L22 22H16H10L16 7Z" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>
+                        <circle cx="16" cy="16" r="3" fill="#06C167"/>
+                    </svg>
+                </span>
+                <span class="logo-text">AutoCarGPS</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#faq">FAQ</a>
+            </div>
+            <a href="#pricing" class="btn btn-nav">Start Free Trial</a>
+            <button class="mobile-toggle" id="mobileToggle" aria-label="Menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobileMenu">
+        <a href="#features" onclick="closeMobile()">Features</a>
+        <a href="#how-it-works" onclick="closeMobile()">How It Works</a>
+        <a href="#pricing" onclick="closeMobile()">Pricing</a>
+        <a href="#faq" onclick="closeMobile()">FAQ</a>
+        <a href="#pricing" class="btn btn-primary" onclick="closeMobile()">Start Free Trial</a>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg">
+            <div class="hero-glow"></div>
+            <div class="hero-grid"></div>
+        </div>
+        <div class="container hero-content">
+            <div class="hero-badge">
+                <span class="badge-dot"></span>
+                GPS Tracking for Android
+            </div>
+            <h1>Know Where Your Car Is.<br><span class="gradient-text">Always.</span></h1>
+            <p class="hero-subtitle">Real-time GPS tracking, trip history, speed monitoring, and a live web dashboard — all from your Android phone. No hardware needed.</p>
+            <div class="hero-cta">
+                <a href="#pricing" class="btn btn-primary btn-lg">
+                    Start 3-Day Free Trial
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                </a>
+                <a href="#features" class="btn btn-ghost btn-lg">See Features</a>
+            </div>
+            <p class="hero-note">No credit card required · 3-day free trial · Then €19.99 one-time</p>
+
+            <!-- Hero Visual -->
+            <div class="hero-visual">
+                <div class="phone-mockup">
+                    <div class="phone-screen">
+                        <div class="screen-header">
+                            <span class="screen-speed">72</span>
+                            <span class="screen-unit">km/h</span>
+                            <span class="screen-badge-live">LIVE</span>
+                        </div>
+                        <div class="screen-map">
+                            <div class="map-lines">
+                                <div class="map-line l1"></div>
+                                <div class="map-line l2"></div>
+                                <div class="map-line l3"></div>
+                                <div class="map-line l4"></div>
+                                <div class="map-line l5"></div>
+                            </div>
+                            <div class="car-dot">
+                                <div class="car-pulse"></div>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="#06C167"><path d="M12 2L18 20L12 16L6 20L12 2Z"/></svg>
+                            </div>
+                            <div class="route-line"></div>
+                        </div>
+                        <div class="screen-stats">
+                            <div class="mini-stat"><span>3</span>Trips</div>
+                            <div class="mini-stat"><span>47.2</span>km</div>
+                            <div class="mini-stat"><span>118</span>max</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="web-mockup">
+                    <div class="web-bar">
+                        <span class="web-dot r"></span>
+                        <span class="web-dot y"></span>
+                        <span class="web-dot g"></span>
+                        <span class="web-url">valoraconsulting.net/cartracker</span>
+                    </div>
+                    <div class="web-content">
+                        <div class="web-sidebar">
+                            <div class="ws-speed"><span>72</span> km/h</div>
+                            <div class="ws-row"><span class="ws-label">Status</span><span class="ws-val moving">MOVING</span></div>
+                            <div class="ws-row"><span class="ws-label">Today</span><span class="ws-val">3 trips</span></div>
+                            <div class="ws-row"><span class="ws-label">Distance</span><span class="ws-val">47.2 km</span></div>
+                        </div>
+                        <div class="web-map">
+                            <div class="wm-lines">
+                                <div class="wm-line wl1"></div>
+                                <div class="wm-line wl2"></div>
+                                <div class="wm-line wl3"></div>
+                            </div>
+                            <div class="wm-car">
+                                <div class="wm-pulse"></div>
+                                <div class="wm-arrow"></div>
+                            </div>
+                            <div class="wm-route"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Brands / Trust Bar -->
+    <section class="trust-bar">
+        <div class="container">
+            <div class="trust-items">
+                <div class="trust-item">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#06C167"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+                    <span>Privacy First</span>
+                </div>
+                <div class="trust-item">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#06C167"><path d="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14z"/></svg>
+                    <span>Android Only</span>
+                </div>
+                <div class="trust-item">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#06C167"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                    <span>Real-Time</span>
+                </div>
+                <div class="trust-item">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#06C167"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                    <span>No Hardware</span>
+                </div>
+                <div class="trust-item">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#06C167"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                    <span>Battery Smart</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Features</span>
+                <h2>Everything You Need to<br><span class="gradient-text">Track Your Vehicle</span></h2>
+                <p>AutoCarGPS turns your Android phone into a powerful GPS tracker with professional-grade features.</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                    </div>
+                    <h3>Live GPS Tracking</h3>
+                    <p>See your car's exact position in real-time on a beautiful dark-themed map. Updates every 2-3 seconds while driving.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M13 2.05v2.02c3.95.49 7 3.85 7 7.93 0 3.73-2.56 6.86-6.02 7.75l.71 1.96C19.15 20.56 22 16.65 22 12c0-5.18-3.95-9.45-9-9.95zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7v2c-2.76 0-5 2.24-5 5s2.24 5 5 5v2zm1-9V7h-2v3H8v2h3v3h2v-3h3v-2h-3z"/></svg>
+                    </div>
+                    <h3>Automatic Trip Detection</h3>
+                    <p>Trips start and stop automatically when you drive. No buttons to press — just get in your car and go.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M20.38 8.57l-1.23 1.85a8 8 0 01-.22 7.58H5.07A8 8 0 0115.58 6.85l1.85-1.23A10 10 0 003.35 19a2 2 0 001.72 1h13.85a2 2 0 001.74-1 10 10 0 00-.28-10.43zM10.59 15.41a2 2 0 002.83 0l5.66-8.49-8.49 5.66a2 2 0 000 2.83z"/></svg>
+                    </div>
+                    <h3>Speed Monitoring</h3>
+                    <p>Color-coded speed display from green (slow) to red (highway). See current, max, and average speed for every trip.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 15h14v3H5z"/></svg>
+                    </div>
+                    <h3>Web Dashboard</h3>
+                    <p>Track your car from any browser. The live web dashboard shows everything — position, speed, trips, stats — in real-time.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
+                    </div>
+                    <h3>Uber-Style UI</h3>
+                    <p>Sleek dark theme inspired by Uber. Smooth animations, glassmorphic overlays, and intuitive navigation.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zm-2.72 13.95h-1.9v-1.9h1.9v1.9zm1.35-5.26s-.38.42-.67.71c-.48.49-.83 1.15-.83 1.6h-1.6c0-.83.46-1.52.93-2l.93-.94c.27-.27.44-.65.44-1.06 0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5H8.5c0-1.93 1.57-3.5 3.5-3.5s3.5 1.57 3.5 3.5c0 .77-.31 1.46-.81 1.97l-.39.22z"/></svg>
+                    </div>
+                    <h3>Battery Optimized</h3>
+                    <p>Smart power management: full GPS on charger, battery-saver mode when unplugged. Your phone won't die.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+                    </div>
+                    <h3>Trip History & Stats</h3>
+                    <p>Full history of every trip: distance, duration, max speed, average speed. Filter by 1h, 6h, 24h, 3 days, 7 days, or 30 days.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#06C167"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+                    </div>
+                    <h3>Speed-Colored Routes</h3>
+                    <p>Your routes are drawn on the map with colors that change based on speed — green for slow, yellow for city, red for highway.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">How It Works</span>
+                <h2>Up and Running in<br><span class="gradient-text">3 Minutes</span></h2>
+            </div>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Install the App</h3>
+                    <p>Download AutoCarGPS on your Android phone. Grant location permissions and you're set.</p>
+                </div>
+                <div class="step-arrow">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#2C2C2E"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Leave It in the Car</h3>
+                    <p>Place your phone in the car. The app runs silently in the background — no interaction needed.</p>
+                </div>
+                <div class="step-arrow">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="#2C2C2E"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Track From Anywhere</h3>
+                    <p>Open the web dashboard on any device to see your car's live location, speed, and trip history.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Pricing</span>
+                <h2>One Price.<br><span class="gradient-text">Everything Included.</span></h2>
+                <p>No subscriptions. No hidden fees. Pay once, use forever.</p>
+            </div>
+
+            <div class="pricing-card">
+                <div class="pricing-badge">Most Popular</div>
+                <div class="pricing-header">
+                    <h3>AutoCarGPS</h3>
+                    <p class="pricing-desc">Complete GPS Tracking Solution</p>
+                </div>
+                <div class="pricing-price">
+                    <span class="price-currency">€</span>
+                    <span class="price-amount">19</span>
+                    <span class="price-decimal">.99</span>
+                    <span class="price-period">one-time</span>
+                </div>
+                <div class="pricing-trial">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#06C167"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                    <span>Start with a <strong>free 3-day trial</strong></span>
+                </div>
+                <ul class="pricing-features">
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Real-time GPS tracking
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Live web dashboard
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Automatic trip detection
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Speed-colored route history
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Trip stats & analytics
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Battery-optimized tracking
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Offline map caching
+                    </li>
+                    <li>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="#06C167"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                        Lifetime updates
+                    </li>
+                </ul>
+                <a href="#" class="btn btn-primary btn-lg btn-full" id="buyBtn">
+                    Start Free 3-Day Trial
+                </a>
+                <p class="pricing-note">No credit card required to start trial</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq" id="faq">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">FAQ</span>
+                <h2>Frequently Asked<br><span class="gradient-text">Questions</span></h2>
+            </div>
+
+            <div class="faq-list">
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>Do I need any special hardware?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>No. AutoCarGPS uses your Android phone's built-in GPS sensor. Just install the app, leave the phone in your car, and track from anywhere using the web dashboard.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>Does it drain my battery?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>AutoCarGPS has intelligent power management. When plugged into your car charger, it uses full GPS accuracy (updates every 2 seconds). When unplugged and parked, it switches to battery-saver mode with less frequent updates. Most users keep the phone on a car charger, so battery isn't an issue.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>Does it work without internet?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>The app caches map tiles for offline viewing and stores all trip data locally. GPS tracking works without internet. However, the live web dashboard requires internet to send location updates to the server. Trip data syncs automatically when connectivity is restored.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>How accurate is the tracking?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>AutoCarGPS uses your phone's GPS hardware, which is typically accurate to 3-10 meters outdoors. The app includes smart filtering algorithms that eliminate GPS jitter, acceleration spikes, and inaccurate readings to provide reliable speed and position data.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>Is my location data private?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Yes. Your data is stored on your own private server dashboard. Only you have access to your tracking data. We don't sell, share, or analyze your location history. The dashboard URL is known only to you.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>What Android version do I need?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>AutoCarGPS works on Android 7.0 (Nougat) and above — that covers about 95% of all Android devices in use today.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>What happens after the 3-day trial?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>After the 3-day free trial, you can purchase the full version for a one-time payment of €19.99. No subscriptions, no recurring charges. If you choose not to buy, the app simply stops tracking — no charges whatsoever.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question" onclick="toggleFaq(this)">
+                        <span>Can I track multiple cars?</span>
+                        <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Each license covers one device (one car). To track multiple vehicles, you'll need a separate phone and license for each car. Each car gets its own dashboard view.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2>Ready to track your car?</h2>
+                <p>Start your free 3-day trial today. No credit card needed.</p>
+                <a href="#pricing" class="btn btn-primary btn-lg">
+                    Get AutoCarGPS — Free Trial
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <span class="logo-text">AutoCarGPS</span>
+                <p>Real-time vehicle tracking for Android.</p>
+            </div>
+            <div class="footer-links">
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#faq">FAQ</a>
+            </div>
+            <div class="footer-copy">
+                &copy; 2026 AutoCarGPS. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Mobile menu toggle
+        document.getElementById('mobileToggle').addEventListener('click', () => {
+            document.getElementById('mobileMenu').classList.toggle('open');
+            document.getElementById('mobileToggle').classList.toggle('active');
+        });
+        function closeMobile() {
+            document.getElementById('mobileMenu').classList.remove('open');
+            document.getElementById('mobileToggle').classList.remove('active');
+        }
+
+        // FAQ accordion
+        function toggleFaq(btn) {
+            const item = btn.parentElement;
+            const isOpen = item.classList.contains('open');
+            document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+            if (!isOpen) item.classList.add('open');
+        }
+
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // Navbar scroll effect
+        window.addEventListener('scroll', () => {
+            const nav = document.querySelector('.navbar');
+            nav.classList.toggle('scrolled', window.scrollY > 20);
+        });
+    </script>
+</body>
+</html>
