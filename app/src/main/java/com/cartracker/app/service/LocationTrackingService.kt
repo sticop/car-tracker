@@ -18,6 +18,7 @@ import com.cartracker.app.data.AppDatabase
 import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.map.OfflineTileManager
+import com.cartracker.app.network.WebReporter
 import com.cartracker.app.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -434,6 +435,19 @@ class LocationTrackingService : LifecycleService() {
         // Always update current location for the map, regardless of accuracy
         _currentLocation.value = location
 
+        // Report location to web server for live tracking dashboard
+        WebReporter.reportLocation(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            speedKmh = smoothedSpeed,
+            bearing = location.bearing,
+            altitude = location.altitude,
+            accuracy = location.accuracy,
+            isMoving = isMoving,
+            isCharging = isCharging,
+            tripId = currentTripId
+        )
+
         // Cache map tiles around current location for offline use
         // Skip tile caching on battery when parked to save power and data
         if (isCharging || isMoving) {
@@ -609,6 +623,9 @@ class LocationTrackingService : LifecycleService() {
             currentTripId = tripId
             _currentTripIdFlow.value = tripId
 
+            // Report trip start to web server
+            WebReporter.reportTripStart(tripId, location.latitude, location.longitude)
+
             recordLocationPoint(location, speedKmh)
 
             withContext(Dispatchers.Main) {
@@ -652,6 +669,18 @@ class LocationTrackingService : LifecycleService() {
                 )
             )
 
+            // Report trip end to web server
+            val lastPt = db.locationPointDao().getLastPointForTrip(tripId)
+            WebReporter.reportTripEnd(
+                tripId = tripId,
+                distanceMeters = totalDistance,
+                maxSpeedKmh = maxSpeed,
+                avgSpeedKmh = avgSpeed,
+                durationMillis = now - trip.startTime,
+                latitude = lastPt?.latitude ?: 0.0,
+                longitude = lastPt?.longitude ?: 0.0
+            )
+
             currentTripId = null
             _currentTripIdFlow.value = null
 
@@ -687,6 +716,17 @@ class LocationTrackingService : LifecycleService() {
                 timestamp = System.currentTimeMillis()
             )
             db.locationPointDao().insert(point)
+
+            // Report trip point to web server
+            WebReporter.reportTripPoint(
+                tripId = tripId,
+                latitude = location.latitude,
+                longitude = location.longitude,
+                speedKmh = speedKmh,
+                bearing = location.bearing,
+                altitude = location.altitude,
+                accuracy = location.accuracy
+            )
 
             // Update trip distance periodically
             if (pointCount % 10 == 0) {
