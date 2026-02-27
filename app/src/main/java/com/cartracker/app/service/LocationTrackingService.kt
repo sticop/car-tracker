@@ -120,6 +120,10 @@ class LocationTrackingService : LifecycleService() {
         // Real driving is consistently above 8 km/h, so this prevents false trip starts
         private const val PARKING_SPEED_THRESHOLD = 8.0f
 
+        // At or above this speed, IMMEDIATELY start a trip (single reading, no confirmation)
+        // 20 km/h is impossible from GPS jitter — guaranteed real driving
+        private const val INSTANT_TRIP_SPEED_THRESHOLD = 20.0f
+
         // Number of consecutive above-threshold readings needed to start trip
         private const val REQUIRED_MOVING_COUNT = 3
 
@@ -563,8 +567,13 @@ class LocationTrackingService : LifecycleService() {
 
         } else {
             // Currently parked - check if starting to move
-            // Require multiple consecutive readings above threshold to avoid GPS jitter
-            if (speedForLogic >= PARKING_SPEED_THRESHOLD) {
+            if (speedForLogic >= INSTANT_TRIP_SPEED_THRESHOLD) {
+                // 20+ km/h — definitely driving, start trip immediately
+                Log.d(TAG, "INSTANT trip start: smoothed=${String.format("%.1f", speedForLogic)} km/h >= ${INSTANT_TRIP_SPEED_THRESHOLD} km/h threshold")
+                consecutiveMovingCount = 0
+                startTrip(location, rawSpeedKmh)
+            } else if (speedForLogic >= PARKING_SPEED_THRESHOLD) {
+                // 8-20 km/h — might be driving, require consecutive confirmations
                 consecutiveMovingCount++
                 Log.d(TAG, "Movement detected: smoothed=${String.format("%.1f", speedForLogic)} km/h raw=${String.format("%.1f", rawSpeedKmh)} km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
                 if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
