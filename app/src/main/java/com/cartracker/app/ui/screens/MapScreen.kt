@@ -238,9 +238,9 @@ fun MapScreen(viewModel: MainViewModel) {
                 .align(Alignment.TopStart)
                 .shadow(12.dp, RoundedCornerShape(24.dp))
                 .background(UberCardDark, RoundedCornerShape(24.dp))
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Animated status dot
             val pulseAlpha by rememberInfiniteTransition(label = "pulse").animateFloat(
@@ -254,27 +254,31 @@ fun MapScreen(viewModel: MainViewModel) {
             )
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(8.dp)
                     .clip(CircleShape)
                     .background(
                         (if (isMoving) UberGreen else UberOrange).copy(alpha = pulseAlpha)
                     )
             )
 
-            Column {
+            // Speed + km/h inline on the same baseline
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = String.format("%.0f", currentSpeed),
-                    fontSize = 28.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
                     color = Color.White,
-                    lineHeight = 28.sp
+                    lineHeight = 26.sp
                 )
                 Text(
                     text = "km/h",
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = UberTextSecondary,
-                    lineHeight = 14.sp
+                    modifier = Modifier.padding(bottom = 3.dp)
                 )
             }
         }
@@ -283,28 +287,38 @@ fun MapScreen(viewModel: MainViewModel) {
         Surface(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(end = 16.dp, top = 8.dp)
+                .padding(end = 16.dp, top = 10.dp)
                 .align(Alignment.TopEnd),
             shape = RoundedCornerShape(20.dp),
             color = if (isMoving) UberGreen.copy(alpha = 0.15f) else UberCardDark,
-            tonalElevation = 4.dp,
             shadowElevation = 8.dp
         ) {
-            Text(
-                text = if (isMoving) "DRIVING" else "PARKED",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp,
-                color = if (isMoving) UberGreen else UberTextSecondary
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(if (isMoving) UberGreen else UberOrange)
+                )
+                Text(
+                    text = if (isMoving) "DRIVING" else "PARKED",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = if (isMoving) UberGreen else UberTextSecondary
+                )
+            }
         }
 
         // ── Time filter pills (below speed, horizontal scroll) ──
         Row(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(top = 72.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 60.dp, start = 12.dp, end = 12.dp)
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .align(Alignment.TopStart),
@@ -555,28 +569,31 @@ fun MapScreen(viewModel: MainViewModel) {
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 20.dp)
-                .size(48.dp)
-                .clickable {
-                    val loc = currentLocation
-                    if (loc != null) {
-                        mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
-                        mapView.controller.setZoom(16.0)
-                    } else {
-                        Toast
-                            .makeText(context, "Waiting for GPS...", Toast.LENGTH_SHORT)
-                            .show()
-                    }
-                },
+                .size(46.dp),
             shape = RoundedCornerShape(14.dp),
             color = UberCardDark,
-            shadowElevation = 12.dp
+            shadowElevation = 12.dp,
+            onClick = {
+                val loc = currentLocation
+                if (loc != null) {
+                    mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
+                    mapView.controller.setZoom(16.0)
+                } else {
+                    Toast
+                        .makeText(context, "Waiting for GPS...", Toast.LENGTH_SHORT)
+                        .show()
+                }
+            }
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     Icons.Rounded.MyLocation,
                     "Center on location",
                     tint = UberGreen,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

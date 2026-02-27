@@ -76,11 +76,11 @@ fun CarTrackerNavHost(viewModel: MainViewModel) {
                             }
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = UberGreen,
-                            selectedTextColor = UberGreen,
+                            selectedIconColor = UberWhite,
+                            selectedTextColor = UberWhite,
                             unselectedIconColor = UberTextTertiary,
                             unselectedTextColor = UberTextTertiary,
-                            indicatorColor = UberGreen.copy(alpha = 0.12f)
+                            indicatorColor = Color.Transparent
                         )
                     )
                 }
