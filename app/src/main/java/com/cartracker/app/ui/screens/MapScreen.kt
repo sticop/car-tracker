@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +50,6 @@ import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
@@ -58,7 +58,27 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 
-// CartoDB Dark Matter @2x — high-res dark tiles that match the Uber theme
+// CartoDB Voyager @2x — high-detail retina tiles for sharper roads/labels
+private val CartoVoyager = object : OnlineTileSourceBase(
+    "CartoVoyager",
+    0, 20, 512, ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/",
+        "https://d.basemaps.cartocdn.com/rastertiles/voyager/"
+    ),
+    "Map tiles by CartoDB, under CC BY 3.0. Data by OpenStreetMap, under ODbL."
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return "${baseUrl}$zoom/$x/$y@2x.png"
+    }
+}
+
+// Keep dark option available for night driving preference
 private val CartoDarkMatter = object : OnlineTileSourceBase(
     "CartoDarkMatter",
     0, 20, 512, ".png",
@@ -78,6 +98,15 @@ private val CartoDarkMatter = object : OnlineTileSourceBase(
     }
 }
 
+private enum class MapStyle(val label: String) {
+    DETAIL("Detail"),
+    DARK("Dark")
+}
+
+private fun tileSourceFor(style: MapStyle): OnlineTileSourceBase {
+    return if (style == MapStyle.DARK) CartoDarkMatter else CartoVoyager
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(viewModel: MainViewModel) {
@@ -89,6 +118,7 @@ fun MapScreen(viewModel: MainViewModel) {
     val selectedTripId by viewModel.selectedTripId.collectAsState()
     val selectedTripWithPoints by viewModel.selectedTripWithPoints.collectAsState()
     val allPoints by viewModel.allPointsInRange.collectAsState()
+    var mapStyle by rememberSaveable { mutableStateOf(MapStyle.DETAIL) }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -111,7 +141,7 @@ fun MapScreen(viewModel: MainViewModel) {
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(CartoDarkMatter)
+            setTileSource(tileSourceFor(mapStyle))
             setMultiTouchControls(true)
             @Suppress("DEPRECATION")
             setBuiltInZoomControls(false)
@@ -127,6 +157,11 @@ fun MapScreen(viewModel: MainViewModel) {
             setScrollableAreaLimitLatitude(85.05, -85.05, 0)
             setUseDataConnection(OfflineTileManager.isNetworkAvailable(context))
         }
+    }
+
+    LaunchedEffect(mapStyle) {
+        mapView.setTileSource(tileSourceFor(mapStyle))
+        mapView.invalidate()
     }
 
     LaunchedEffect(isOnline.value) {
@@ -183,7 +218,7 @@ fun MapScreen(viewModel: MainViewModel) {
                     val color = tripColors[index % tripColors.size]
                     val polyline = Polyline().apply {
                         outlinePaint.color = color
-                        outlinePaint.strokeWidth = 10f
+                        outlinePaint.strokeWidth = 8f
                         outlinePaint.strokeCap = Paint.Cap.ROUND
                         outlinePaint.isAntiAlias = true
                         setPoints(points.map { GeoPoint(it.latitude, it.longitude) })
@@ -229,7 +264,12 @@ fun MapScreen(viewModel: MainViewModel) {
     }
 
     // ── Uber-style layout ──────────────────────────────────────────
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isTablet = maxWidth >= 840.dp
+        val edgePadding = if (isTablet) 24.dp else 16.dp
+        val mapBottomPadding = if (isTablet) 28.dp else 20.dp
+        val sheetWidthFraction = if (isTablet) 0.76f else 1f
+
         // Full-screen map
         AndroidView(
             factory = { mapView },
@@ -240,7 +280,7 @@ fun MapScreen(viewModel: MainViewModel) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(140.dp)
+                .height(if (isTablet) 170.dp else 140.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
@@ -257,7 +297,7 @@ fun MapScreen(viewModel: MainViewModel) {
         Row(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(start = 16.dp, top = 8.dp)
+                .padding(start = edgePadding, top = 8.dp)
                 .align(Alignment.TopStart)
                 .shadow(12.dp, RoundedCornerShape(24.dp))
                 .background(UberCardDark, RoundedCornerShape(24.dp))
@@ -310,7 +350,7 @@ fun MapScreen(viewModel: MainViewModel) {
         Surface(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(end = 16.dp, top = 10.dp)
+                .padding(end = edgePadding, top = 10.dp)
                 .align(Alignment.TopEnd),
             shape = RoundedCornerShape(20.dp),
             color = if (isMoving) UberGreen.copy(alpha = 0.15f) else UberCardDark,
@@ -341,10 +381,11 @@ fun MapScreen(viewModel: MainViewModel) {
         Row(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(top = 66.dp, start = 12.dp, end = 12.dp)
-                .fillMaxWidth()
+                .padding(top = if (isTablet) 72.dp else 66.dp)
+                .fillMaxWidth(if (isTablet) 0.82f else 1f)
+                .padding(horizontal = 12.dp)
                 .horizontalScroll(rememberScrollState())
-                .align(Alignment.TopStart),
+                .align(if (isTablet) Alignment.TopCenter else Alignment.TopStart),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             TimeFilter.entries.forEach { filter ->
@@ -379,9 +420,10 @@ fun MapScreen(viewModel: MainViewModel) {
             selectedTripWithPoints?.let { tripData ->
                 Surface(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 0.dp),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        .fillMaxWidth(sheetWidthFraction)
+                        .padding(bottom = if (isTablet) 8.dp else 0.dp),
+                    shape = if (isTablet) RoundedCornerShape(24.dp)
+                    else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                     color = UberCharcoal,
                     tonalElevation = 8.dp,
                     shadowElevation = 16.dp
@@ -471,6 +513,26 @@ fun MapScreen(viewModel: MainViewModel) {
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            MapStyle.entries.forEach { style ->
+                val isSelected = mapStyle == style
+                Surface(
+                    modifier = Modifier.clickable { mapStyle = style },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) UberBlue else UberCardDark.copy(alpha = 0.9f),
+                    shadowElevation = if (isSelected) 4.dp else 2.dp
+                ) {
+                    Text(
+                        text = style.label,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) UberWhite else UberTextSecondary
+                    )
+                }
+            }
         }
 
         // ── Bottom gradient (when no trip selected) ──
@@ -496,7 +558,7 @@ fun MapScreen(viewModel: MainViewModel) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 20.dp),
+                    .padding(start = edgePadding, bottom = mapBottomPadding),
                 shape = RoundedCornerShape(20.dp),
                 color = UberCardDark,
                 shadowElevation = 8.dp
@@ -529,7 +591,7 @@ fun MapScreen(viewModel: MainViewModel) {
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp)
+                .padding(bottom = if (selectedTripId == null) 80.dp else 20.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -562,7 +624,7 @@ fun MapScreen(viewModel: MainViewModel) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 16.dp),
+                    .padding(start = edgePadding),
                 shape = RoundedCornerShape(24.dp),
                 color = UberCardDark,
                 shadowElevation = 8.dp
@@ -591,8 +653,8 @@ fun MapScreen(viewModel: MainViewModel) {
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 20.dp)
-                .size(46.dp),
+                .padding(end = edgePadding, bottom = mapBottomPadding)
+                .size(if (isTablet) 52.dp else 46.dp),
             shape = RoundedCornerShape(14.dp),
             color = UberCardDark,
             shadowElevation = 12.dp,
@@ -677,7 +739,7 @@ private fun drawSpeedColoredRoute(mapView: MapView, points: List<LocationPoint>)
 
         val polyline = Polyline().apply {
             outlinePaint.color = SpeedColorUtils.getColorForSpeed(avgSpeed)
-            outlinePaint.strokeWidth = 10f
+            outlinePaint.strokeWidth = 8f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             outlinePaint.isAntiAlias = true
             setPoints(

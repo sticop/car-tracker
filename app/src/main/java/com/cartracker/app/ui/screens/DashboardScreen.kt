@@ -1,5 +1,6 @@
 package com.cartracker.app.ui.screens
 
+import android.location.Location
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cartracker.app.ui.DayStats
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
@@ -38,261 +41,388 @@ fun DashboardScreen(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val todayStats by viewModel.todayStats.collectAsState()
     val currentTripId by viewModel.currentTripId.collectAsState()
-    val trips by viewModel.trips.collectAsState()
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(UberBlack)
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        UberBlack,
+                        UberDarkGray.copy(alpha = 0.95f),
+                        UberBlack
+                    )
+                )
+            )
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        val isTablet = maxWidth >= 840.dp
+        val horizontalPadding = if (isTablet) 32.dp else 20.dp
+        val maxContentWidth = if (isTablet) 1024.dp else 640.dp
+        val speedometerSize = if (isTablet) 320.dp else 260.dp
+        val sectionSpacing = if (isTablet) 14.dp else 10.dp
 
-        // Header
-        Text(
-            text = "Live",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Black,
-            color = UberWhite,
-            letterSpacing = (-0.5).sp,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Tracking status pill
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            color = if (isTracking) UberGreen.copy(alpha = 0.1f) else UberRed.copy(alpha = 0.1f)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(horizontal = horizontalPadding),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                    .widthIn(max = maxContentWidth)
             ) {
-                val pulseAlpha by rememberInfiniteTransition(label = "trackPulse").animateFloat(
-                    initialValue = 1f,
-                    targetValue = 0.3f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1000),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "trackPulseAlpha"
-                )
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            (if (isTracking) UberGreen else UberRed).copy(alpha = pulseAlpha)
-                        )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = if (isTracking) "TRACKING ACTIVE" else "TRACKING OFF",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                    color = if (isTracking) UberGreen else UberRed
+                    text = "Live",
+                    fontSize = if (isTablet) 32.sp else 28.sp,
+                    fontWeight = FontWeight.Black,
+                    color = UberWhite,
+                    letterSpacing = (-0.5).sp,
+                    modifier = Modifier.fillMaxWidth()
                 )
-            }
-        }
 
-        Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-        // Uber-style speedometer
-        UberSpeedometer(
-            speed = currentSpeed,
-            maxSpeed = 200f,
-            modifier = Modifier.size(260.dp)
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Speed category
-        Text(
-            text = SpeedColorUtils.getSpeedCategory(currentSpeed),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color = Color(SpeedColorUtils.getColorForSpeed(currentSpeed))
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Status cards
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            UberDashCard(
-                modifier = Modifier.weight(1f),
-                title = "Status",
-                value = if (isMoving) "Driving" else "Parked",
-                icon = if (isMoving) Icons.Rounded.DirectionsCar else Icons.Rounded.LocalParking,
-                accentColor = if (isMoving) UberGreen else UberOrange
-            )
-            UberDashCard(
-                modifier = Modifier.weight(1f),
-                title = "Current Trip",
-                value = currentTripId?.let { "#$it" } ?: "None",
-                icon = Icons.Rounded.Route,
-                accentColor = UberGreen
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Location info
-        currentLocation?.let { loc ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = UberCardDark
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isTracking) UberGreen.copy(alpha = 0.1f) else UberRed.copy(alpha = 0.1f)
+                ) {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp, horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            Icons.Rounded.MyLocation,
-                            contentDescription = null,
-                            tint = UberGreen,
-                            modifier = Modifier.size(16.dp)
+                        val pulseAlpha by rememberInfiniteTransition(label = "trackPulse").animateFloat(
+                            initialValue = 1f,
+                            targetValue = 0.3f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "trackPulseAlpha"
                         )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    (if (isTracking) UberGreen else UberRed).copy(alpha = pulseAlpha)
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Location",
-                            fontSize = 13.sp,
+                            text = if (isTracking) "TRACKING ACTIVE" else "TRACKING OFF",
                             fontWeight = FontWeight.Bold,
-                            color = UberWhite
+                            fontSize = 12.sp,
+                            letterSpacing = 1.sp,
+                            color = if (isTracking) UberGreen else UberRed
                         )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            UberLocLabel("Lat", String.format("%.6f", loc.latitude))
-                            Spacer(modifier = Modifier.height(4.dp))
-                            UberLocLabel("Lon", String.format("%.6f", loc.longitude))
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            UberLocLabel("Alt", "${String.format("%.0f", loc.altitude)}m")
-                            Spacer(modifier = Modifier.height(4.dp))
-                            UberLocLabel("Acc", "${String.format("%.0f", loc.accuracy)}m")
-                        }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(if (isTablet) 34.dp else 28.dp))
+
+                UberSpeedometer(
+                    speed = currentSpeed,
+                    maxSpeed = 200f,
+                    modifier = Modifier
+                        .size(speedometerSize)
+                        .align(Alignment.CenterHorizontally)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = SpeedColorUtils.getSpeedCategory(currentSpeed),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = Color(SpeedColorUtils.getColorForSpeed(currentSpeed)),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+
+                Spacer(modifier = Modifier.height(if (isTablet) 28.dp else 24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(sectionSpacing)
+                ) {
+                    UberDashCard(
+                        modifier = Modifier.weight(1f),
+                        title = "Status",
+                        value = if (isMoving) "Driving" else "Parked",
+                        icon = if (isMoving) Icons.Rounded.DirectionsCar else Icons.Rounded.LocalParking,
+                        accentColor = if (isMoving) UberGreen else UberOrange
+                    )
+                    UberDashCard(
+                        modifier = Modifier.weight(1f),
+                        title = "Current Trip",
+                        value = currentTripId?.let { "#$it" } ?: "None",
+                        icon = Icons.Rounded.Route,
+                        accentColor = UberGreen
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(sectionSpacing))
+
+                if (isTablet) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(sectionSpacing),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(sectionSpacing)
+                        ) {
+                            currentLocation?.let { DashboardLocationCard(loc = it) }
+                            TodaySummaryCard(todayStats = todayStats)
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(sectionSpacing)
+                        ) {
+                            SpeedEvidenceCard(accuracyMeters = currentLocation?.accuracy)
+                            TrackingSnapshotCard(
+                                isTracking = isTracking,
+                                isMoving = isMoving,
+                                currentTripId = currentTripId
+                            )
+                        }
+                    }
+                } else {
+                    currentLocation?.let { loc ->
+                        DashboardLocationCard(loc = loc)
+                        Spacer(modifier = Modifier.height(sectionSpacing))
+                    }
+                    TodaySummaryCard(todayStats = todayStats)
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+                    SpeedEvidenceCard(accuracyMeters = currentLocation?.accuracy)
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+                    TrackingSnapshotCard(
+                        isTracking = isTracking,
+                        isMoving = isMoving,
+                        currentTripId = currentTripId
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Today's summary
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = UberCardDark
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+@Composable
+private fun DashboardLocationCard(loc: Location) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = UberCardDark
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.MyLocation,
+                    contentDescription = null,
+                    tint = UberGreen,
+                    modifier = Modifier.size(16.dp)
+                )
                 Text(
-                    text = "Today",
+                    text = "Location",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = UberWhite
                 )
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "${todayStats.tripCount}",
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Black,
-                            color = UberGreen
-                        )
-                        Text("Trips", fontSize = 11.sp, color = UberTextTertiary)
-                    }
-                    // Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(48.dp)
-                            .background(UberDivider)
-                    )
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = FormatUtils.formatDistance(todayStats.totalDistanceMeters),
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Black,
-                            color = UberGreen
-                        )
-                        Text("Distance", fontSize = 11.sp, color = UberTextTertiary)
-                    }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    UberLocLabel("Lat", String.format("%.6f", loc.latitude))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    UberLocLabel("Lon", String.format("%.6f", loc.longitude))
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    UberLocLabel("Alt", "${String.format("%.0f", loc.altitude)}m")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    UberLocLabel("Acc", "${String.format("%.0f", loc.accuracy)}m")
                 }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Speed evidence card
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = UberBlue.copy(alpha = 0.08f)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Shield,
-                        contentDescription = null,
-                        tint = UberBlue,
-                        modifier = Modifier.size(20.dp)
-                    )
+@Composable
+private fun TodaySummaryCard(todayStats: DayStats) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = UberCardDark
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Today",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = UberWhite
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Speed Evidence",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = UberWhite
+                        text = "${todayStats.tripCount}",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = UberGreen
                     )
+                    Text("Trips", fontSize = 11.sp, color = UberTextTertiary)
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Speed is recorded with GPS precision. Show this app during a traffic stop to prove your actual speed. View trip details for point-by-point data.",
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = UberTextSecondary
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(48.dp)
+                        .background(UberDivider)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = UberCardDark
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "GPS Accuracy: ${currentLocation?.accuracy?.let { "${it.toInt()}m" } ?: "N/A"}",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = UberBlue
+                        text = FormatUtils.formatDistance(todayStats.totalDistanceMeters),
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = UberGreen
                     )
+                    Text("Distance", fontSize = 11.sp, color = UberTextTertiary)
                 }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(24.dp))
+@Composable
+private fun SpeedEvidenceCard(accuracyMeters: Float?) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = UberBlue.copy(alpha = 0.08f)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Shield,
+                    contentDescription = null,
+                    tint = UberBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "Speed Evidence",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UberWhite
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Speed is recorded with GPS precision. Show this app during a traffic stop to prove your actual speed. View trip details for point-by-point data.",
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = UberTextSecondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = UberCardDark
+            ) {
+                Text(
+                    text = "GPS Accuracy: ${accuracyMeters?.let { "${it.toInt()}m" } ?: "N/A"}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = UberBlue
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackingSnapshotCard(
+    isTracking: Boolean,
+    isMoving: Boolean,
+    currentTripId: Long?
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = UberCardDark
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Session",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = UberWhite
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                SnapshotItem(
+                    label = "Tracker",
+                    value = if (isTracking) "On" else "Off",
+                    valueColor = if (isTracking) UberGreen else UberRed
+                )
+                SnapshotItem(
+                    label = "State",
+                    value = if (isMoving) "Driving" else "Parked",
+                    valueColor = if (isMoving) UberGreen else UberOrange
+                )
+                SnapshotItem(
+                    label = "Trip",
+                    value = currentTripId?.let { "#$it" } ?: "None"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SnapshotItem(
+    label: String,
+    value: String,
+    valueColor: Color = UberWhite
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = UberTextTertiary
+        )
     }
 }
 
@@ -313,7 +443,7 @@ fun UberSpeedometer(
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speed,
-        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "speed"
     )
 
