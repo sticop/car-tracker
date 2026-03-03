@@ -7,12 +7,18 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.cartracker.app.settings.AppSettingsStore
 import com.cartracker.app.service.LocationTrackingService
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
             intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            if (!AppSettingsStore.shouldAutoStartOnBoot(context)) {
+                Log.d("BootReceiver", "Auto-start on boot disabled in settings")
+                return
+            }
+
             // Only start service if we have location permission
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED ||

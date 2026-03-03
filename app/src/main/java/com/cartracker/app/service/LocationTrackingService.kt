@@ -19,6 +19,8 @@ import com.cartracker.app.data.LocationPoint
 import com.cartracker.app.data.Trip
 import com.cartracker.app.map.OfflineTileManager
 import com.cartracker.app.network.WebReporter
+import com.cartracker.app.settings.AppSettings
+import com.cartracker.app.settings.AppSettingsStore
 import com.cartracker.app.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,9 @@ class LocationTrackingService : LifecycleService() {
 
     private lateinit var locationManager: LocationManager
     private lateinit var db: AppDatabase
+    private lateinit var settingsStore: AppSettingsStore
+    @Volatile
+    private var appSettings: AppSettings = AppSettings()
 
     private var currentTripId: Long? = null
     private var isMoving = false
@@ -79,9 +84,11 @@ class LocationTrackingService : LifecycleService() {
                 Log.d(TAG, "Network location for map only: ${location.latitude}, ${location.longitude} (accuracy=${location.accuracy}m)")
             }
             // Cache tiles around network location too
-            OfflineTileManager.cacheTilesAroundLocation(
-                this@LocationTrackingService, location.latitude, location.longitude, lifecycleScope
-            )
+            if (appSettings.autoTileCacheEnabled) {
+                OfflineTileManager.cacheTilesAroundLocation(
+                    this@LocationTrackingService, location.latitude, location.longitude, lifecycleScope
+                )
+            }
         }
 
         @Deprecated("Deprecated in API level 29")
@@ -118,29 +125,6 @@ class LocationTrackingService : LifecycleService() {
     companion object {
         private const val TAG = "LocationTrackingService"
 
-        // Speed threshold: below this = considered parked (km/h)
-        // Set to 8 km/h — GPS jitter on Galaxy S6 can produce up to 18 km/h when stationary
-        // Real driving is consistently above 8 km/h, so this prevents false trip starts
-        private const val PARKING_SPEED_THRESHOLD = 8.0f
-
-        // At or above this speed, IMMEDIATELY start a trip (single reading, no confirmation)
-        // 20 km/h is impossible from GPS jitter — guaranteed real driving
-        private const val INSTANT_TRIP_SPEED_THRESHOLD = 20.0f
-
-        // Number of consecutive above-threshold readings needed to start trip
-        private const val REQUIRED_MOVING_COUNT = 3
-
-        // Minimum GPS accuracy to trust speed readings during active trip (meters)
-        // Tightened to 30m — network locations (48m+) must be excluded from speed calc
-        private const val MIN_ACCURACY_METERS = 30f
-
-        // Relaxed accuracy threshold for trip DETECTION when parked (meters)
-        // GPS Doppler speed is accurate to ~0.5 km/h even with poor position accuracy
-        // so we can trust hasSpeed=true from GPS even at 50m position accuracy.
-        // This prevents the 2-4 minute delay caused by GPS cold start delivering
-        // initial fixes with 40-50m accuracy that were being rejected.
-        private const val MIN_ACCURACY_TRIP_DETECTION = 50f
-
         // Minimum distance (meters) between GPS fixes to compute speed from distance
         // If distance is less than this OR less than the GPS accuracy, the movement is
         // GPS jitter (position bouncing within the accuracy circle), not real movement.
@@ -166,18 +150,7 @@ class LocationTrackingService : LifecycleService() {
         private const val SPEED_CALIBRATION_FACTOR = 1.0f
         private const val SPEED_CALIBRATION_OFFSET_KMH = 0.0f
 
-        // Time stationary before ending trip (milliseconds) - 2 minutes
-        private const val PARKING_TIMEOUT_MS = 2 * 60 * 1000L
-
-        // Location update intervals — faster for more responsive speed display
-        private const val ACTIVE_INTERVAL_MS = 1000L       // 1 second when moving
-        private const val PASSIVE_INTERVAL_MS = 1500L       // keep GPS warm while parked
-        private const val FASTEST_INTERVAL_MS = 1000L       // 1 second max
-
-        // Battery-optimized intervals: reduce GPS polling when on battery
-        // Saves significant battery vs 2s polling while still detecting trip starts within ~20s
-        private const val BATTERY_PARKED_INTERVAL_MS = 10000L    // 10s when parked on battery
-        private const val BATTERY_ACTIVE_INTERVAL_MS = 2000L     // 2s when moving on battery
+        // Wake lock timeout used when running on battery.
         private const val BATTERY_WAKE_LOCK_HOURS = 2L           // 2h wake lock on battery (vs 6h on charger)
 
         // Max time gap (seconds) between consecutive GPS fixes for distance-based speed calc
@@ -185,9 +158,6 @@ class LocationTrackingService : LifecycleService() {
         // On battery: 60s needed since 10s GPS intervals can sometimes produce larger gaps
         private const val MAX_TIME_GAP_SPEED_CALC_CHARGER = 30.0
         private const val MAX_TIME_GAP_SPEED_CALC_BATTERY = 60.0
-
-        // Data retention: 30 days in milliseconds
-        const val DATA_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
 
         // SharedFlow for live updates to UI
         private val _currentSpeed = MutableStateFlow(0f)
@@ -292,8 +262,34 @@ class LocationTrackingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        db = (application as CarTrackerApp).database
+        val app = application as CarTrackerApp
+        db = app.database
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        settingsStore = app.settingsStore
+        appSettings = settingsStore.settings.value
+
+        lifecycleScope.launch {
+            var previous = appSettings
+            settingsStore.settings.collect { updated ->
+                val shouldRefreshIntervals =
+                    previous.batterySaverModeEnabled != updated.batterySaverModeEnabled ||
+                    previous.activeGpsIntervalSeconds != updated.activeGpsIntervalSeconds ||
+                    previous.passiveGpsIntervalSeconds != updated.passiveGpsIntervalSeconds ||
+                    previous.batteryActiveGpsIntervalSeconds != updated.batteryActiveGpsIntervalSeconds ||
+                    previous.batteryParkedGpsIntervalSeconds != updated.batteryParkedGpsIntervalSeconds
+                val shouldApplyRetention = previous.dataRetentionDays != updated.dataRetentionDays
+
+                appSettings = updated
+                previous = updated
+
+                if (_isTracking.value && shouldRefreshIntervals) {
+                    startLocationUpdates(isMoving)
+                }
+                if (shouldApplyRetention) {
+                    lifecycleScope.launch(Dispatchers.IO) { cleanOldData() }
+                }
+            }
+        }
 
         // Detect initial charging state
         isCharging = isDeviceCharging()
@@ -402,7 +398,11 @@ class LocationTrackingService : LifecycleService() {
 
         // Re-check charging state on each start command
         isCharging = isDeviceCharging()
-        val powerMode = if (isCharging) "Full GPS" else "Battery saver"
+        val powerMode = if (!isCharging && appSettings.batterySaverModeEnabled) {
+            "Battery saver"
+        } else {
+            "Full GPS"
+        }
 
         startForeground(CarTrackerApp.TRACKING_NOTIFICATION_ID, createNotification("Monitoring ($powerMode)..."))
         acquireWakeLock()
@@ -419,20 +419,53 @@ class LocationTrackingService : LifecycleService() {
         startLocationUpdates(false) // Start in passive/parked mode
         _isTracking.value = true
 
-        // Resume active trip if exists
+        // Resume active trip if exists — but check staleness first
         lifecycleScope.launch(Dispatchers.IO) {
             val activeTrip = db.tripDao().getActiveTrip()
             if (activeTrip != null) {
-                currentTripId = activeTrip.id
-                _currentTripIdFlow.value = activeTrip.id
-                totalDistance = activeTrip.distanceMeters
-                val pointCountVal = db.locationPointDao().getPointCountForTrip(activeTrip.id)
-                pointCount = pointCountVal
-                isMoving = true
-                _isMovingFlow.value = true
-                withContext(Dispatchers.Main) {
-                    startLocationUpdates(true)
-                    updateNotification("Tracking trip #${activeTrip.id}")
+                val lastPoint = db.locationPointDao().getLastPointForTrip(activeTrip.id)
+                val parkingTimeoutMs = appSettings.parkingTimeoutMinutes * 60_000L
+                val now = System.currentTimeMillis()
+
+                // Check if the trip is stale: if the last recorded point is older
+                // than the parking timeout, the car has been stationary the entire
+                // time the service was down — end the trip instead of resuming it.
+                val lastPointAge = if (lastPoint != null) now - lastPoint.timestamp else now - activeTrip.startTime
+                if (lastPointAge > parkingTimeoutMs) {
+                    Log.d(TAG, "Stale active trip #${activeTrip.id} detected: last point was ${lastPointAge / 1000}s ago (parking timeout=${parkingTimeoutMs / 1000}s) — ending trip")
+                    val maxSpeed = db.locationPointDao().getMaxSpeedForTrip(activeTrip.id) ?: 0f
+                    val avgSpeed = db.locationPointDao().getAvgSpeedForTrip(activeTrip.id) ?: 0f
+                    val endTime = lastPoint?.timestamp ?: now
+                    db.tripDao().update(
+                        activeTrip.copy(
+                            endTime = endTime,
+                            isActive = false,
+                            maxSpeedKmh = maxSpeed,
+                            avgSpeedKmh = avgSpeed,
+                            durationMillis = endTime - activeTrip.startTime
+                        )
+                    )
+                    // Don't set isMoving — stay in parked mode
+                    withContext(Dispatchers.Main) {
+                        val mode = if (!isCharging && appSettings.batterySaverModeEnabled) "Battery saver" else "Full GPS"
+                        updateNotification("Parked - Monitoring ($mode)")
+                    }
+                } else {
+                    Log.d(TAG, "Resuming active trip #${activeTrip.id} (last point ${lastPointAge / 1000}s ago, within parking timeout)")
+                    currentTripId = activeTrip.id
+                    _currentTripIdFlow.value = activeTrip.id
+                    totalDistance = activeTrip.distanceMeters
+                    val pointCountVal = db.locationPointDao().getPointCountForTrip(activeTrip.id)
+                    pointCount = pointCountVal
+                    isMoving = true
+                    _isMovingFlow.value = true
+                    // Start the stationary timer immediately so the trip will end
+                    // if GPS never delivers a moving fix (e.g. car parked indoors)
+                    stationaryStartTime = now
+                    withContext(Dispatchers.Main) {
+                        startLocationUpdates(true)
+                        updateNotification("Tracking trip #${activeTrip.id}")
+                    }
                 }
             }
         }
@@ -448,7 +481,7 @@ class LocationTrackingService : LifecycleService() {
 
         // Cache map tiles around current location for offline use
         // Skip tile caching on battery when parked to save power and data
-        if (isCharging || isMoving) {
+        if (appSettings.autoTileCacheEnabled && (isCharging || isMoving)) {
             OfflineTileManager.cacheTilesAroundLocation(
                 this, location.latitude, location.longitude, lifecycleScope
             )
@@ -459,7 +492,11 @@ class LocationTrackingService : LifecycleService() {
         // is accurate even with poor position accuracy. This prevents the 2-4 minute
         // delay from GPS cold starts where early fixes have 40-50m accuracy.
         // When IN a trip: use strict threshold (30m) for accurate distance tracking.
-        val accuracyThreshold = if (isMoving) MIN_ACCURACY_METERS else MIN_ACCURACY_TRIP_DETECTION
+        val accuracyThreshold = if (isMoving) {
+            appSettings.minTripAccuracyMeters.toFloat()
+        } else {
+            appSettings.minTripDetectionAccuracyMeters.toFloat()
+        }
         val canUseForTripLogic = location.accuracy <= accuracyThreshold
 
         // Calculate raw speed from GPS Doppler when available, otherwise from distance/time.
@@ -497,21 +534,42 @@ class LocationTrackingService : LifecycleService() {
         _currentSpeed.value = displaySpeed
 
         // Report location to web server after speed update so it stays in sync with UI.
-        WebReporter.reportLocation(
-            latitude = location.latitude,
-            longitude = location.longitude,
-            speedKmh = displaySpeed,
-            bearing = location.bearing,
-            altitude = location.altitude,
-            accuracy = location.accuracy,
-            isMoving = isMoving,
-            isCharging = isCharging,
-            tripId = currentTripId
-        )
+        if (appSettings.webSyncEnabled) {
+            WebReporter.reportLocation(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                speedKmh = displaySpeed,
+                bearing = location.bearing,
+                altitude = location.altitude,
+                accuracy = location.accuracy,
+                isMoving = isMoving,
+                isCharging = isCharging,
+                tripId = currentTripId
+            )
+        }
 
         // If accuracy is weak, keep UI speed fresh but skip trip distance/state logic.
+        // However, if we're on a trip and haven't had a usable fix for a while,
+        // the stationary timer should still progress so the trip eventually ends
+        // (e.g. phone is indoors with no GPS, only network locations).
         if (!canUseForTripLogic) {
-            Log.d(TAG, "Skipping trip logic due to low accuracy: accuracy=${location.accuracy}m (max=${accuracyThreshold}m)")
+            if (isMoving && stationaryStartTime > 0) {
+                val parkingTimeoutMs = appSettings.parkingTimeoutMinutes * 60_000L
+                val elapsed = System.currentTimeMillis() - stationaryStartTime
+                if (elapsed > parkingTimeoutMs) {
+                    Log.d(TAG, "No usable GPS fix during trip for ${elapsed / 1000}s — ending stale trip")
+                    endTrip()
+                    return
+                } else {
+                    Log.d(TAG, "Skipping trip logic (low accuracy: ${location.accuracy}m), stationary timer at ${elapsed / 1000}s / ${parkingTimeoutMs / 1000}s")
+                }
+            } else if (isMoving && stationaryStartTime == 0L) {
+                // Start the stationary timer since we have no usable GPS fix
+                stationaryStartTime = System.currentTimeMillis()
+                Log.d(TAG, "Skipping trip logic (low accuracy: ${location.accuracy}m), starting stationary timer")
+            } else {
+                Log.d(TAG, "Skipping trip logic due to low accuracy: accuracy=${location.accuracy}m (max=${accuracyThreshold}m)")
+            }
             return
         }
 
@@ -522,23 +580,27 @@ class LocationTrackingService : LifecycleService() {
 
         // Apply separate smoothing for trip logic so UI stays responsive.
         val speedForLogic = smoothLogicSpeed(rawSpeedKmh)
+        val parkingSpeedThreshold = appSettings.parkingSpeedThresholdKmh
+        val instantTripSpeedThreshold = appSettings.instantTripSpeedThresholdKmh
+        val requiredMovingReadings = appSettings.requiredMovingReadings
+        val parkingTimeoutMs = appSettings.parkingTimeoutMinutes * 60_000L
 
         if (isMoving) {
             // Currently on a trip
-            if (speedForLogic < PARKING_SPEED_THRESHOLD) {
+            if (speedForLogic < parkingSpeedThreshold) {
                 // Speed dropped - might be parking
                 if (stationaryStartTime == 0L) {
                     stationaryStartTime = System.currentTimeMillis()
                     Log.d(TAG, "Stationary timer started (smoothed=${String.format("%.1f", speedForLogic)} km/h)")
                 } else {
                     val elapsed = System.currentTimeMillis() - stationaryStartTime
-                    if (elapsed > PARKING_TIMEOUT_MS) {
+                    if (elapsed > parkingTimeoutMs) {
                         // Been stationary long enough - end trip
                         Log.d(TAG, "Parking timeout reached (${elapsed}ms) - ending trip")
                         endTrip()
                         return
                     } else {
-                        Log.d(TAG, "Stationary for ${elapsed / 1000}s / ${PARKING_TIMEOUT_MS / 1000}s")
+                        Log.d(TAG, "Stationary for ${elapsed / 1000}s / ${parkingTimeoutMs / 1000}s")
                     }
                 }
             } else {
@@ -554,16 +616,16 @@ class LocationTrackingService : LifecycleService() {
 
         } else {
             // Currently parked - check if starting to move
-            if (speedForLogic >= INSTANT_TRIP_SPEED_THRESHOLD) {
+            if (speedForLogic >= instantTripSpeedThreshold) {
                 // 20+ km/h — definitely driving, start trip immediately
-                Log.d(TAG, "INSTANT trip start: smoothed=${String.format("%.1f", speedForLogic)} km/h >= ${INSTANT_TRIP_SPEED_THRESHOLD} km/h threshold")
+                Log.d(TAG, "INSTANT trip start: smoothed=${String.format("%.1f", speedForLogic)} km/h >= ${instantTripSpeedThreshold} km/h threshold")
                 consecutiveMovingCount = 0
                 startTrip(location, rawSpeedKmh)
-            } else if (speedForLogic >= PARKING_SPEED_THRESHOLD) {
+            } else if (speedForLogic >= parkingSpeedThreshold) {
                 // 8-20 km/h — might be driving, require consecutive confirmations
                 consecutiveMovingCount++
-                Log.d(TAG, "Movement detected: smoothed=${String.format("%.1f", speedForLogic)} km/h raw=${String.format("%.1f", rawSpeedKmh)} km/h (count: $consecutiveMovingCount/$REQUIRED_MOVING_COUNT)")
-                if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
+                Log.d(TAG, "Movement detected: smoothed=${String.format("%.1f", speedForLogic)} km/h raw=${String.format("%.1f", rawSpeedKmh)} km/h (count: $consecutiveMovingCount/$requiredMovingReadings)")
+                if (consecutiveMovingCount >= requiredMovingReadings) {
                     consecutiveMovingCount = 0
                     startTrip(location, rawSpeedKmh)
                 }
@@ -601,7 +663,11 @@ class LocationTrackingService : LifecycleService() {
 
         val distanceM = prevLoc.distanceTo(location).toDouble()
         val timeDiffSec = (location.time - prevTime) / 1000.0
-        val maxTimeGap = if (isCharging) MAX_TIME_GAP_SPEED_CALC_CHARGER else MAX_TIME_GAP_SPEED_CALC_BATTERY
+        val maxTimeGap = if (isCharging || !appSettings.batterySaverModeEnabled) {
+            MAX_TIME_GAP_SPEED_CALC_CHARGER
+        } else {
+            MAX_TIME_GAP_SPEED_CALC_BATTERY
+        }
         if (timeDiffSec <= 0.5 || timeDiffSec >= maxTimeGap) {
             Log.d(TAG, "Time gap too large/small for speed calc: ${String.format("%.1f", timeDiffSec)}s (max=$maxTimeGap)")
             return 0f
@@ -660,7 +726,9 @@ class LocationTrackingService : LifecycleService() {
             _currentTripIdFlow.value = tripId
 
             // Report trip start to web server
-            WebReporter.reportTripStart(tripId, location.latitude, location.longitude)
+            if (appSettings.webSyncEnabled) {
+                WebReporter.reportTripStart(tripId, location.latitude, location.longitude)
+            }
 
             recordLocationPoint(location, speedKmh)
 
@@ -708,23 +776,29 @@ class LocationTrackingService : LifecycleService() {
             )
 
             // Report trip end to web server
-            val lastPt = db.locationPointDao().getLastPointForTrip(tripId)
-            WebReporter.reportTripEnd(
-                tripId = tripId,
-                distanceMeters = totalDistance,
-                maxSpeedKmh = maxSpeed,
-                avgSpeedKmh = avgSpeed,
-                durationMillis = now - trip.startTime,
-                latitude = lastPt?.latitude ?: 0.0,
-                longitude = lastPt?.longitude ?: 0.0
-            )
+            if (appSettings.webSyncEnabled) {
+                val lastPt = db.locationPointDao().getLastPointForTrip(tripId)
+                WebReporter.reportTripEnd(
+                    tripId = tripId,
+                    distanceMeters = totalDistance,
+                    maxSpeedKmh = maxSpeed,
+                    avgSpeedKmh = avgSpeed,
+                    durationMillis = now - trip.startTime,
+                    latitude = lastPt?.latitude ?: 0.0,
+                    longitude = lastPt?.longitude ?: 0.0
+                )
+            }
 
             currentTripId = null
             _currentTripIdFlow.value = null
 
             withContext(Dispatchers.Main) {
                 startLocationUpdates(false) // Switch to passive mode
-                val mode = if (isCharging) "Full GPS" else "Battery saver"
+                val mode = if (!isCharging && appSettings.batterySaverModeEnabled) {
+                    "Battery saver"
+                } else {
+                    "Full GPS"
+                }
                 updateNotification("Parked - Monitoring ($mode)")
             }
         }
@@ -756,15 +830,17 @@ class LocationTrackingService : LifecycleService() {
             db.locationPointDao().insert(point)
 
             // Report trip point to web server
-            WebReporter.reportTripPoint(
-                tripId = tripId,
-                latitude = location.latitude,
-                longitude = location.longitude,
-                speedKmh = speedKmh,
-                bearing = location.bearing,
-                altitude = location.altitude,
-                accuracy = location.accuracy
-            )
+            if (appSettings.webSyncEnabled) {
+                WebReporter.reportTripPoint(
+                    tripId = tripId,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    speedKmh = speedKmh,
+                    bearing = location.bearing,
+                    altitude = location.altitude,
+                    accuracy = location.accuracy
+                )
+            }
 
             // Update trip distance periodically
             if (pointCount % 10 == 0) {
@@ -806,33 +882,32 @@ class LocationTrackingService : LifecycleService() {
         locationManager.removeUpdates(gpsLocationListener)
         locationManager.removeUpdates(networkLocationListener)
 
-        // Choose intervals based on charging state and movement mode
-        // On battery: use longer intervals to save power
-        // On charger: use aggressive intervals for best responsiveness
+        // Choose intervals based on charging state, battery strategy and movement mode.
         val intervalMs: Long
         val minDistance: Float
+        val batterySaverInEffect = !isCharging && appSettings.batterySaverModeEnabled
+        val activeIntervalMs = appSettings.activeGpsIntervalSeconds * 1000L
+        val passiveIntervalMs = appSettings.passiveGpsIntervalSeconds * 1000L
+        val batteryActiveIntervalMs = appSettings.batteryActiveGpsIntervalSeconds * 1000L
+        val batteryParkedIntervalMs = appSettings.batteryParkedGpsIntervalSeconds * 1000L
 
-        if (isCharging) {
-            // On charger — full performance, battery doesn't matter
-            intervalMs = if (activeMode) ACTIVE_INTERVAL_MS else PASSIVE_INTERVAL_MS
+        if (!batterySaverInEffect) {
+            intervalMs = if (activeMode) activeIntervalMs else passiveIntervalMs
             minDistance = 0f
         } else {
-            // On battery — optimize power consumption
             if (activeMode) {
-                // Moving on battery: still need accurate tracking, slightly relaxed
-                intervalMs = BATTERY_ACTIVE_INTERVAL_MS
-                minDistance = 0f  // Need all points for trip recording
+                intervalMs = batteryActiveIntervalMs
+                minDistance = 0f
             } else {
-                // Parked on battery: use longer interval to save power
-                // minDistance must be 0 so we keep getting fixes even when stationary —
-                // this keeps lastLocation fresh so trip detection can compute speed
-                // immediately when driving starts (avoids "Time gap too large" rejection)
-                intervalMs = BATTERY_PARKED_INTERVAL_MS
+                intervalMs = batteryParkedIntervalMs
                 minDistance = 0f
             }
         }
 
-        Log.d(TAG, "Starting location updates: activeMode=$activeMode interval=${intervalMs}ms minDist=${minDistance}m charging=$isCharging")
+        Log.d(
+            TAG,
+            "Starting location updates: activeMode=$activeMode interval=${intervalMs}ms minDist=${minDistance}m charging=$isCharging batterySaver=$batterySaverInEffect"
+        )
 
         // GPS provider — used for BOTH map display AND speed/trip calculations
         try {
@@ -853,7 +928,7 @@ class LocationTrackingService : LifecycleService() {
             // Network locations have 30-50m accuracy and cause position jumps
             // that create fake speed spikes (e.g. the 95 km/h spike in Trip #4)
             // On battery when parked: skip network provider entirely to save power
-            if (!isCharging && !activeMode) {
+            if (batterySaverInEffect && !activeMode) {
                 Log.d(TAG, "Skipping network provider (on battery, parked — saving power)")
             } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
@@ -936,7 +1011,11 @@ class LocationTrackingService : LifecycleService() {
         startLocationUpdates(isMoving)
 
         // Update notification to reflect power mode
-        val powerMode = if (isCharging) "Full GPS" else "Battery-optimized"
+        val powerMode = if (!isCharging && appSettings.batterySaverModeEnabled) {
+            "Battery-optimized"
+        } else {
+            "Full GPS"
+        }
         val statusText = if (isMoving) {
             "Trip #${currentTripId ?: "?"} - $powerMode"
         } else {
@@ -946,10 +1025,11 @@ class LocationTrackingService : LifecycleService() {
     }
 
     private suspend fun cleanOldData() {
-        val cutoff = System.currentTimeMillis() - DATA_RETENTION_MS
+        val retentionMs = appSettings.dataRetentionDays.toLong() * 24 * 60 * 60 * 1000
+        val cutoff = System.currentTimeMillis() - retentionMs
         db.tripDao().deleteOlderThan(cutoff)
         db.locationPointDao().deleteOlderThan(cutoff)
-        Log.d(TAG, "Cleaned data older than 30 days")
+        Log.d(TAG, "Cleaned data older than ${appSettings.dataRetentionDays} days")
     }
 
     override fun onDestroy() {

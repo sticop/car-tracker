@@ -46,6 +46,7 @@ import com.cartracker.app.data.Trip
 import com.cartracker.app.map.OfflineTileManager
 import com.cartracker.app.ui.MainViewModel
 import com.cartracker.app.ui.TimeFilter
+import com.cartracker.app.settings.MapStylePreference
 import com.cartracker.app.ui.theme.*
 import com.cartracker.app.util.FormatUtils
 import com.cartracker.app.util.SpeedColorUtils
@@ -107,6 +108,14 @@ private fun tileSourceFor(style: MapStyle): OnlineTileSourceBase {
     return if (style == MapStyle.DARK) CartoDarkMatter else CartoVoyager
 }
 
+private fun MapStylePreference.toMapStyle(): MapStyle {
+    return if (this == MapStylePreference.DARK) MapStyle.DARK else MapStyle.DETAIL
+}
+
+private fun MapStyle.toPreference(): MapStylePreference {
+    return if (this == MapStyle.DARK) MapStylePreference.DARK else MapStylePreference.DETAIL
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(viewModel: MainViewModel) {
@@ -118,7 +127,10 @@ fun MapScreen(viewModel: MainViewModel) {
     val selectedTripId by viewModel.selectedTripId.collectAsState()
     val selectedTripWithPoints by viewModel.selectedTripWithPoints.collectAsState()
     val allPoints by viewModel.allPointsInRange.collectAsState()
-    var mapStyle by rememberSaveable { mutableStateOf(MapStyle.DETAIL) }
+    val appSettings by viewModel.appSettings.collectAsState()
+    var mapStyle by rememberSaveable {
+        mutableStateOf(appSettings.defaultMapStyle.toMapStyle())
+    }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -159,6 +171,10 @@ fun MapScreen(viewModel: MainViewModel) {
         }
     }
 
+    LaunchedEffect(appSettings.defaultMapStyle) {
+        mapStyle = appSettings.defaultMapStyle.toMapStyle()
+    }
+
     LaunchedEffect(mapStyle) {
         mapView.setTileSource(tileSourceFor(mapStyle))
         mapView.invalidate()
@@ -168,8 +184,8 @@ fun MapScreen(viewModel: MainViewModel) {
         mapView.setUseDataConnection(isOnline.value)
     }
 
-    LaunchedEffect(currentLocation) {
-        if (!hasCenteredOnUser.value && currentLocation != null) {
+    LaunchedEffect(currentLocation, appSettings.autoCenterMap) {
+        if (appSettings.autoCenterMap && !hasCenteredOnUser.value && currentLocation != null) {
             val loc = currentLocation!!
             mapView.controller.setCenter(GeoPoint(loc.latitude, loc.longitude))
             mapView.controller.setZoom(16.0)
@@ -242,7 +258,7 @@ fun MapScreen(viewModel: MainViewModel) {
         mapView.invalidate()
     }
 
-    LaunchedEffect(currentLocation, isMoving) {
+    LaunchedEffect(currentLocation, isMoving, appSettings.autoCenterMap) {
         currentLocation?.let { loc ->
             mapView.overlays.removeAll { it is MyLocationOverlay }
 
@@ -255,7 +271,7 @@ fun MapScreen(viewModel: MainViewModel) {
             )
             mapView.overlays.add(gpsOverlay)
 
-            if (selectedTripId == null) {
+            if (selectedTripId == null && appSettings.autoCenterMap) {
                 mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
             }
 
@@ -519,7 +535,10 @@ fun MapScreen(viewModel: MainViewModel) {
             MapStyle.entries.forEach { style ->
                 val isSelected = mapStyle == style
                 Surface(
-                    modifier = Modifier.clickable { mapStyle = style },
+                    modifier = Modifier.clickable {
+                        mapStyle = style
+                        viewModel.setDefaultMapStyle(style.toPreference())
+                    },
                     shape = RoundedCornerShape(20.dp),
                     color = if (isSelected) UberBlue else UberCardDark.copy(alpha = 0.9f),
                     shadowElevation = if (isSelected) 4.dp else 2.dp
@@ -579,41 +598,6 @@ fun MapScreen(viewModel: MainViewModel) {
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = UberWhite
-                    )
-                }
-            }
-        }
-
-        // ── Offline indicator ──
-        AnimatedVisibility(
-            visible = !isOnline.value,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = if (selectedTripId == null) 80.dp else 20.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = UberRed.copy(alpha = 0.9f),
-                shadowElevation = 4.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.CloudOff,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "Offline",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }

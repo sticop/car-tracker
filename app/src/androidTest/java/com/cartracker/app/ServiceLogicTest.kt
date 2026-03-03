@@ -251,10 +251,12 @@ class ServiceLogicTest {
     // ── Data Retention ──────────────────────────────────────────────
 
     @Test
-    fun dataRetention_30daysInMs() {
-        val retention = LocationTrackingService.DATA_RETENTION_MS
+    fun dataRetention_defaultIs30days() {
+        // Data retention is now configurable via AppSettings; default is 30 days
+        val defaultSettings = com.cartracker.app.settings.AppSettings()
+        assertEquals(30, defaultSettings.dataRetentionDays)
         val expectedMs = 30L * 24 * 60 * 60 * 1000
-        assertEquals(expectedMs, retention)
+        assertEquals(expectedMs, defaultSettings.dataRetentionDays.toLong() * 24 * 60 * 60 * 1000)
     }
 
     // ── Service Start/Stop Intents ──────────────────────────────────

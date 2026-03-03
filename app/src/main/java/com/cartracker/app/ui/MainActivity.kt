@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import com.cartracker.app.settings.AppSettingsStore
 import com.cartracker.app.service.LocationTrackingService
 import com.cartracker.app.ui.theme.CarTrackerTheme
 
@@ -175,7 +176,9 @@ class MainActivity : ComponentActivity() {
 
     private fun startTracking() {
         LocationTrackingService.start(this)
-        requestBatteryOptimizationExclusion()
+        if (AppSettingsStore.shouldRequestBatteryOptimizationExclusion(this)) {
+            requestBatteryOptimizationExclusion()
+        }
     }
 
     /**

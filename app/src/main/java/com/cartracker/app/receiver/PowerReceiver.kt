@@ -7,10 +7,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.cartracker.app.settings.AppSettingsStore
 import com.cartracker.app.service.LocationTrackingService
 
 class PowerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!AppSettingsStore.shouldAutoStartOnBoot(context)) {
+            Log.d("PowerReceiver", "Auto-start disabled; not waking service on power change")
+            return
+        }
+
         when (intent.action) {
             Intent.ACTION_POWER_CONNECTED -> {
                 Log.d("PowerReceiver", "Power connected - ensuring tracking service is running")
