@@ -54,6 +54,194 @@ function getDeviceFile($deviceId, $suffix) {
     return $safe . '_' . $suffix . '.json';
 }
 
+function clampFloat($value, $min, $max, $fallback) {
+    if (!is_numeric($value)) {
+        $value = $fallback;
+    }
+    $value = floatval($value);
+    return max($min, min($max, $value));
+}
+
+function clampInt($value, $min, $max, $fallback) {
+    if (!is_numeric($value)) {
+        $value = $fallback;
+    }
+    $value = intval(round(floatval($value)));
+    return max($min, min($max, $value));
+}
+
+function boolOrDefault($value, $fallback) {
+    if ($value === null) return $fallback;
+    $parsed = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    return $parsed ?? $fallback;
+}
+
+function cityIdForName($name) {
+    $id = strtolower($name);
+    $id = preg_replace('/[^a-z0-9_-]+/', '-', $id);
+    $id = trim($id, '-_');
+    return $id !== '' ? $id : substr(md5($name), 0, 12);
+}
+
+function sanitizeCityName($value) {
+    $name = trim((string)$value);
+    if ($name === '') return '';
+    $name = preg_replace('/\s+/', ' ', $name);
+    return substr($name, 0, 80);
+}
+
+function defaultSettings() {
+    return [
+        'defaultMapStyle' => 'DETAIL',
+        'autoCenterMap' => true,
+        'offlineCityPromptEnabled' => true,
+        'autoTileCacheEnabled' => true,
+        'webSyncEnabled' => true,
+        'batterySaverModeEnabled' => true,
+        'autoStartOnBootEnabled' => true,
+        'requestBatteryOptimizationExclusion' => true,
+        'parkingSpeedThresholdKmh' => 8.0,
+        'instantTripSpeedThresholdKmh' => 20.0,
+        'requiredMovingReadings' => 3,
+        'parkingTimeoutMinutes' => 2,
+        'minTripAccuracyMeters' => 30,
+        'minTripDetectionAccuracyMeters' => 50,
+        'activeGpsIntervalSeconds' => 1,
+        'passiveGpsIntervalSeconds' => 2,
+        'batteryActiveGpsIntervalSeconds' => 2,
+        'batteryParkedGpsIntervalSeconds' => 10,
+        'dataRetentionDays' => 30,
+        'offlineCityMaps' => [],
+    ];
+}
+
+function normalizeOfflineCityMaps($value) {
+    if (!is_array($value)) return [];
+
+    $result = [];
+    foreach ($value as $entry) {
+        if (!is_array($entry)) continue;
+        $cityName = sanitizeCityName($entry['cityName'] ?? '');
+        if ($cityName === '') continue;
+        $id = cityIdForName($entry['id'] ?? $cityName);
+        if (isset($result[$id])) continue;
+
+        $result[$id] = [
+            'id' => $id,
+            'cityName' => $cityName,
+            'tileCount' => clampInt($entry['tileCount'] ?? 1200, 1, 2000000, 1200),
+            'downloadedAtMillis' => max(0, intval($entry['downloadedAtMillis'] ?? (time() * 1000))),
+        ];
+
+        if (count($result) >= 200) break;
+    }
+
+    return array_values($result);
+}
+
+function normalizeSettingsData($value) {
+    $defaults = defaultSettings();
+    if (!is_array($value)) {
+        $value = [];
+    }
+
+    $parkingSpeed = clampFloat(
+        $value['parkingSpeedThresholdKmh'] ?? $defaults['parkingSpeedThresholdKmh'],
+        3.0,
+        30.0,
+        $defaults['parkingSpeedThresholdKmh']
+    );
+
+    $instantTripRaw = clampFloat(
+        $value['instantTripSpeedThresholdKmh'] ?? $defaults['instantTripSpeedThresholdKmh'],
+        10.0,
+        80.0,
+        $defaults['instantTripSpeedThresholdKmh']
+    );
+    $instantTrip = max($instantTripRaw, $parkingSpeed + 1.0);
+
+    $minTripAccuracy = clampInt(
+        $value['minTripAccuracyMeters'] ?? $defaults['minTripAccuracyMeters'],
+        5,
+        100,
+        $defaults['minTripAccuracyMeters']
+    );
+
+    $minDetectionRaw = clampInt(
+        $value['minTripDetectionAccuracyMeters'] ?? $defaults['minTripDetectionAccuracyMeters'],
+        10,
+        150,
+        $defaults['minTripDetectionAccuracyMeters']
+    );
+    $minDetection = max($minDetectionRaw, $minTripAccuracy);
+
+    $style = strtoupper((string)($value['defaultMapStyle'] ?? $defaults['defaultMapStyle']));
+    if ($style !== 'DARK' && $style !== 'DETAIL') {
+        $style = $defaults['defaultMapStyle'];
+    }
+
+    return [
+        'defaultMapStyle' => $style,
+        'autoCenterMap' => boolOrDefault($value['autoCenterMap'] ?? null, $defaults['autoCenterMap']),
+        'offlineCityPromptEnabled' => boolOrDefault($value['offlineCityPromptEnabled'] ?? null, $defaults['offlineCityPromptEnabled']),
+        'autoTileCacheEnabled' => boolOrDefault($value['autoTileCacheEnabled'] ?? null, $defaults['autoTileCacheEnabled']),
+        'webSyncEnabled' => boolOrDefault($value['webSyncEnabled'] ?? null, $defaults['webSyncEnabled']),
+        'batterySaverModeEnabled' => boolOrDefault($value['batterySaverModeEnabled'] ?? null, $defaults['batterySaverModeEnabled']),
+        'autoStartOnBootEnabled' => boolOrDefault($value['autoStartOnBootEnabled'] ?? null, $defaults['autoStartOnBootEnabled']),
+        'requestBatteryOptimizationExclusion' => boolOrDefault(
+            $value['requestBatteryOptimizationExclusion'] ?? null,
+            $defaults['requestBatteryOptimizationExclusion']
+        ),
+        'parkingSpeedThresholdKmh' => $parkingSpeed,
+        'instantTripSpeedThresholdKmh' => $instantTrip,
+        'requiredMovingReadings' => clampInt(
+            $value['requiredMovingReadings'] ?? $defaults['requiredMovingReadings'],
+            1,
+            10,
+            $defaults['requiredMovingReadings']
+        ),
+        'parkingTimeoutMinutes' => clampInt(
+            $value['parkingTimeoutMinutes'] ?? $defaults['parkingTimeoutMinutes'],
+            1,
+            30,
+            $defaults['parkingTimeoutMinutes']
+        ),
+        'minTripAccuracyMeters' => $minTripAccuracy,
+        'minTripDetectionAccuracyMeters' => $minDetection,
+        'activeGpsIntervalSeconds' => clampInt(
+            $value['activeGpsIntervalSeconds'] ?? $defaults['activeGpsIntervalSeconds'],
+            1,
+            10,
+            $defaults['activeGpsIntervalSeconds']
+        ),
+        'passiveGpsIntervalSeconds' => clampInt(
+            $value['passiveGpsIntervalSeconds'] ?? $defaults['passiveGpsIntervalSeconds'],
+            1,
+            30,
+            $defaults['passiveGpsIntervalSeconds']
+        ),
+        'batteryActiveGpsIntervalSeconds' => clampInt(
+            $value['batteryActiveGpsIntervalSeconds'] ?? $defaults['batteryActiveGpsIntervalSeconds'],
+            1,
+            30,
+            $defaults['batteryActiveGpsIntervalSeconds']
+        ),
+        'batteryParkedGpsIntervalSeconds' => clampInt(
+            $value['batteryParkedGpsIntervalSeconds'] ?? $defaults['batteryParkedGpsIntervalSeconds'],
+            3,
+            180,
+            $defaults['batteryParkedGpsIntervalSeconds']
+        ),
+        'dataRetentionDays' => clampInt(
+            $value['dataRetentionDays'] ?? $defaults['dataRetentionDays'],
+            1,
+            365,
+            $defaults['dataRetentionDays']
+        ),
+        'offlineCityMaps' => normalizeOfflineCityMaps($value['offlineCityMaps'] ?? []),
+    ];
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────
 $action = $_GET['action'] ?? '';
 
@@ -106,6 +294,16 @@ switch ($action) {
     // ── Web Dashboard → Server: Get dashboard stats ──
     case 'dashboard':
         handleGetDashboard();
+        break;
+
+    // ── Web Dashboard ↔ Server: Settings ──
+    case 'settings_get':
+        handleGetSettings();
+        break;
+
+    case 'settings_set':
+        authenticate();
+        handleSetSettings();
         break;
 
     default:
@@ -359,6 +557,40 @@ function handleGetTripPoints() {
 
     $points = readJson(getDeviceFile($deviceId, 'trip_' . $tripId));
     echo json_encode($points);
+}
+
+// ─── Handler: Read Settings ───────────────────────────────────────────
+function handleGetSettings() {
+    $deviceId = $_GET['device'] ?? 'default';
+    $raw = readJson(getDeviceFile($deviceId, 'settings'), null);
+    $settings = normalizeSettingsData($raw);
+    echo json_encode($settings);
+}
+
+// ─── Handler: Save Settings ───────────────────────────────────────────
+function handleSetSettings() {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid JSON']);
+        return;
+    }
+
+    $settingsInput = $input['settings'] ?? null;
+    if (!is_array($settingsInput)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing settings payload']);
+        return;
+    }
+
+    $deviceId = $input['deviceId'] ?? ($_GET['device'] ?? 'default');
+    $normalized = normalizeSettingsData($settingsInput);
+    writeJson(getDeviceFile($deviceId, 'settings'), $normalized);
+
+    echo json_encode([
+        'status' => 'ok',
+        'settings' => $normalized,
+    ]);
 }
 
 // ─── Handler: Dashboard Stats ────────────────────────────────────────

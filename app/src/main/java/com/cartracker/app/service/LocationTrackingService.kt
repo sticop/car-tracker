@@ -72,8 +72,10 @@ class LocationTrackingService : LifecycleService() {
         override fun onProviderDisabled(provider: String) {}
     }
 
-    // Network listener — ONLY updates the map position, never used for speed/trip logic
-    // Network locations have 30-50m accuracy and cause position jumps that create fake speed spikes
+    // Network listener — primarily updates the map position.
+    // When GPS is unavailable for an extended period, network displacement is used
+    // as a fallback to detect movement and start trip recording.
+    private var lastNetworkLocation: Location? = null
     private val networkLocationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             // Only update map if we don't have a recent GPS fix (>10 seconds old)
@@ -83,6 +85,29 @@ class LocationTrackingService : LifecycleService() {
                 _currentLocation.value = location
                 Log.d(TAG, "Network location for map only: ${location.latitude}, ${location.longitude} (accuracy=${location.accuracy}m)")
             }
+
+            // Fallback trip detection: if GPS has been dead for >30s and we're
+            // not already in a trip, check network displacement as a movement signal.
+            val gpsDeadSeconds = if (lastGpsTime == 0L) Long.MAX_VALUE else (now - lastGpsTime) / 1000
+            val prevNetLoc = lastNetworkLocation
+            lastNetworkLocation = location
+
+            if (gpsDeadSeconds > 30 && !isMoving && prevNetLoc != null) {
+                val displacement = prevNetLoc.distanceTo(location).toDouble()
+                val timeDiffSec = (location.time - prevNetLoc.time) / 1000.0
+                // Only consider displacement when it exceeds the combined accuracy
+                // of both fixes (to avoid false positives from cell tower jumps)
+                val minDisplacement = (prevNetLoc.accuracy + location.accuracy).toDouble()
+                if (displacement > minDisplacement && timeDiffSec > 5) {
+                    val estimatedSpeedKmh = (displacement / timeDiffSec) * 3.6
+                    Log.d(TAG, "Network displacement fallback: ${String.format("%.0f", displacement)}m in ${String.format("%.0f", timeDiffSec)}s ≈ ${String.format("%.0f", estimatedSpeedKmh)} km/h (GPS dead for ${gpsDeadSeconds}s)")
+                    if (estimatedSpeedKmh >= appSettings.instantTripSpeedThresholdKmh) {
+                        Log.d(TAG, "Network fallback → trip start! Estimated ${String.format("%.0f", estimatedSpeedKmh)} km/h ≥ ${appSettings.instantTripSpeedThresholdKmh} km/h")
+                        processLocation(location)
+                    }
+                }
+            }
+
             // Cache tiles around network location too
             if (appSettings.autoTileCacheEnabled) {
                 OfflineTileManager.cacheTilesAroundLocation(
@@ -474,7 +499,11 @@ class LocationTrackingService : LifecycleService() {
     }
 
     private fun processLocation(location: Location) {
-        lastGpsFixTime = System.currentTimeMillis()
+        // Only update lastGpsFixTime for real GPS fixes (not network fallback).
+        // This keeps the network fallback active until GPS actually delivers.
+        if (location.provider == LocationManager.GPS_PROVIDER) {
+            lastGpsFixTime = System.currentTimeMillis()
+        }
 
         // Always update current location for the map, regardless of accuracy
         _currentLocation.value = location

@@ -34,9 +34,14 @@
         </div>
         <span class="brand-text">Car Tracker</span>
       </div>
-      <div class="nav-status" id="connectionStatus">
-        <span class="status-dot offline"></span>
-        <span class="status-text">Connecting...</span>
+      <div class="nav-actions">
+        <div class="nav-status" id="connectionStatus">
+          <span class="status-dot offline"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+        <button class="nav-settings-btn" id="openSettingsBtn" type="button">
+          Settings
+        </button>
       </div>
     </nav>
 
@@ -152,6 +157,160 @@
         </div>
       </div>
     </div>
+
+    <div class="city-prompt" id="cityPrompt" hidden>
+      <span class="city-prompt-text" id="cityPromptText"></span>
+      <div class="city-prompt-actions">
+        <button class="city-prompt-btn city-prompt-primary" id="cityPromptDownloadBtn" type="button">
+          Download
+        </button>
+        <button class="city-prompt-btn" id="cityPromptDismissBtn" type="button">Later</button>
+      </div>
+    </div>
+
+    <div class="settings-backdrop" id="settingsBackdrop" hidden></div>
+    <aside class="settings-drawer" id="settingsDrawer" aria-hidden="true">
+      <div class="settings-drawer-header">
+        <h2>Settings</h2>
+        <button class="settings-close-btn" id="closeSettingsBtn" type="button">✕</button>
+      </div>
+      <div class="settings-drawer-content">
+        <section class="settings-section">
+          <h3>Map & Offline</h3>
+          <label class="settings-input-row">
+            <span>Default map style</span>
+            <select id="setting_defaultMapStyle">
+              <option value="DETAIL">Detail</option>
+              <option value="DARK">Dark</option>
+            </select>
+          </label>
+          <label class="settings-switch-row">
+            <span>
+              Auto-center map
+              <small>Keep map following the current location</small>
+            </span>
+            <input type="checkbox" id="setting_autoCenterMap" />
+          </label>
+          <label class="settings-switch-row">
+            <span>
+              City download prompt
+              <small>Prompt when entering a city without cached map data</small>
+            </span>
+            <input type="checkbox" id="setting_offlineCityPromptEnabled" />
+          </label>
+          <label class="settings-switch-row">
+            <span>
+              Auto tile cache
+              <small>Warm tile cache in the browser when city maps are added</small>
+            </span>
+            <input type="checkbox" id="setting_autoTileCacheEnabled" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Trip Detection</h3>
+          <label class="settings-input-row">
+            <span>Parking speed threshold (km/h)</span>
+            <input type="number" id="setting_parkingSpeedThresholdKmh" min="3" max="30" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Instant trip threshold (km/h)</span>
+            <input type="number" id="setting_instantTripSpeedThresholdKmh" min="10" max="80" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Moving confirmations</span>
+            <input type="number" id="setting_requiredMovingReadings" min="1" max="10" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Parking timeout (minutes)</span>
+            <input type="number" id="setting_parkingTimeoutMinutes" min="1" max="30" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Trip accuracy requirement (meters)</span>
+            <input type="number" id="setting_minTripAccuracyMeters" min="5" max="100" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Detection accuracy requirement (meters)</span>
+            <input type="number" id="setting_minTripDetectionAccuracyMeters" min="10" max="150" step="1" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>GPS & Battery</h3>
+          <label class="settings-switch-row">
+            <span>
+              Battery saver mode
+              <small>Use battery-specific polling intervals while unplugged</small>
+            </span>
+            <input type="checkbox" id="setting_batterySaverModeEnabled" />
+          </label>
+          <label class="settings-input-row">
+            <span>Active GPS interval (seconds)</span>
+            <input type="number" id="setting_activeGpsIntervalSeconds" min="1" max="10" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Passive GPS interval (seconds)</span>
+            <input type="number" id="setting_passiveGpsIntervalSeconds" min="1" max="30" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Battery active interval (seconds)</span>
+            <input type="number" id="setting_batteryActiveGpsIntervalSeconds" min="1" max="30" step="1" />
+          </label>
+          <label class="settings-input-row">
+            <span>Battery parked interval (seconds)</span>
+            <input type="number" id="setting_batteryParkedGpsIntervalSeconds" min="3" max="180" step="1" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Data & Startup</h3>
+          <label class="settings-switch-row">
+            <span>
+              Web sync
+              <small>Enable or pause dashboard polling from the server</small>
+            </span>
+            <input type="checkbox" id="setting_webSyncEnabled" />
+          </label>
+          <label class="settings-switch-row">
+            <span>
+              Auto-start on boot
+              <small>Mirrors mobile startup preference</small>
+            </span>
+            <input type="checkbox" id="setting_autoStartOnBootEnabled" />
+          </label>
+          <label class="settings-switch-row">
+            <span>
+              Battery optimization prompt
+              <small>Mirrors mobile battery optimization preference</small>
+            </span>
+            <input type="checkbox" id="setting_requestBatteryOptimizationExclusion" />
+          </label>
+          <label class="settings-input-row">
+            <span>Data retention (days)</span>
+            <input type="number" id="setting_dataRetentionDays" min="1" max="365" step="1" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Offline City Maps</h3>
+          <p class="settings-note">
+            City maps are managed as offline cache profiles in web settings.
+          </p>
+          <div class="settings-city-tools">
+            <input type="text" id="offlineCityInput" placeholder="City name" />
+            <button type="button" id="addOfflineCityBtn">Add</button>
+            <button type="button" id="addCurrentCityBtn">Current city</button>
+          </div>
+          <ul class="offline-city-list" id="offlineCityList"></ul>
+          <button class="settings-clear-btn" type="button" id="clearOfflineCitiesBtn">
+            Clear all city maps
+          </button>
+        </section>
+      </div>
+      <div class="settings-drawer-footer">
+        <span id="settingsSaveStatus">Settings loaded</span>
+      </div>
+    </aside>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

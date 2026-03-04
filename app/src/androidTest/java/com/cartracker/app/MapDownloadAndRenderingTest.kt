@@ -466,7 +466,8 @@ class MapDownloadAndRenderingTest {
     @Test
     fun integration_estimateAndCacheRoundTrip() {
         // Test the full cache lifecycle without actual network download
-        val region = CityRegion("MicroTest", south = 34.02, north = 34.021, west = -6.83, east = -6.829)
+        // Use remote Antarctic coords to avoid hitting real cached tiles
+        val region = CityRegion("MicroTest", south = -77.85, north = -77.849, west = 166.66, east = 166.661)
         val estimated = OfflineTileManager.estimateCityTileCount(region)
         assertTrue("Even tiny region should estimate some tiles", estimated > 0)
 
