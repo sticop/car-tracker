@@ -309,119 +309,102 @@ fun MapScreen(viewModel: MainViewModel) {
                 )
         )
 
-        // ── Speed pill (top-left, Uber-style) ──
-        Row(
+        // ── Top-left stack: status → speed → time filters ──
+        Column(
             modifier = Modifier
                 .statusBarsPadding()
                 .padding(start = edgePadding, top = 8.dp)
-                .align(Alignment.TopStart)
-                .shadow(12.dp, RoundedCornerShape(24.dp))
-                .background(UberCardDark, RoundedCornerShape(24.dp))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .align(Alignment.TopStart),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Animated status dot
-            val pulseAlpha by rememberInfiniteTransition(label = "pulse").animateFloat(
-                initialValue = 1f,
-                targetValue = if (isMoving) 0.3f else 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1000),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "pulseAlpha"
-            )
-            Box(
+            // ── Speed pill with status ──
+            Column(
                 modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(
-                        (if (isMoving) UberGreen else UberOrange).copy(alpha = pulseAlpha)
+                    .shadow(12.dp, RoundedCornerShape(24.dp))
+                    .background(UberCardDark, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Status label (PARKED / DRIVING) on top
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val pulseAlpha by rememberInfiniteTransition(label = "pulse").animateFloat(
+                        initialValue = 1f,
+                        targetValue = if (isMoving) 0.3f else 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulseAlpha"
                     )
-            )
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                (if (isMoving) UberGreen else UberOrange).copy(alpha = pulseAlpha)
+                            )
+                    )
+                    Text(
+                        text = if (isMoving) "DRIVING" else "PARKED",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = if (isMoving) UberGreen else UberTextSecondary
+                    )
+                }
 
-            // Speed + km/h inline on the same baseline
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = String.format("%.0f", currentSpeed),
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White,
-                    lineHeight = 26.sp
-                )
-                Text(
-                    text = "km/h",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = UberTextSecondary,
-                    modifier = Modifier.padding(bottom = 3.dp)
-                )
-            }
-        }
+                Spacer(modifier = Modifier.height(4.dp))
 
-        // ── Status badge (top-right) ──
-        Surface(
-            modifier = Modifier
-                .statusBarsPadding()
-                .padding(end = edgePadding, top = 10.dp)
-                .align(Alignment.TopEnd),
-            shape = RoundedCornerShape(20.dp),
-            color = if (isMoving) UberGreen.copy(alpha = 0.15f) else UberCardDark,
-            shadowElevation = 8.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(if (isMoving) UberGreen else UberOrange)
-                )
-                Text(
-                    text = if (isMoving) "DRIVING" else "PARKED",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = if (isMoving) UberGreen else UberTextSecondary
-                )
-            }
-        }
-
-        // ── Time filter pills (below speed, horizontal scroll) ──
-        Row(
-            modifier = Modifier
-                .statusBarsPadding()
-                .padding(top = if (isTablet) 72.dp else 66.dp)
-                .fillMaxWidth(if (isTablet) 0.82f else 1f)
-                .padding(horizontal = 12.dp)
-                .horizontalScroll(rememberScrollState())
-                .align(if (isTablet) Alignment.TopCenter else Alignment.TopStart),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            TimeFilter.entries.forEach { filter ->
-                val isSelected = timeFilter == filter
-                Surface(
-                    modifier = Modifier.clickable {
-                        viewModel.setTimeFilter(filter)
-                        viewModel.selectTrip(null)
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (isSelected) UberGreen else UberCardDark.copy(alpha = 0.85f),
-                    shadowElevation = if (isSelected) 4.dp else 2.dp
+                // Speed + km/h
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = filter.label,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) Color.Black else UberTextSecondary
+                        text = String.format("%.0f", currentSpeed),
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        lineHeight = 26.sp
                     )
+                    Text(
+                        text = "km/h",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = UberTextSecondary,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+            }
+
+            // ── Time filter pills (horizontal scroll) ──
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TimeFilter.entries.forEach { filter ->
+                    val isSelected = timeFilter == filter
+                    Surface(
+                        modifier = Modifier.clickable {
+                            viewModel.setTimeFilter(filter)
+                            viewModel.selectTrip(null)
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isSelected) UberGreen else UberCardDark.copy(alpha = 0.85f),
+                        shadowElevation = if (isSelected) 4.dp else 2.dp
+                    ) {
+                        Text(
+                            text = filter.label,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.Black else UberTextSecondary
+                        )
+                    }
                 }
             }
         }
