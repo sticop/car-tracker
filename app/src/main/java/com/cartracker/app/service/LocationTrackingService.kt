@@ -931,10 +931,13 @@ class LocationTrackingService : LifecycleService() {
             if (batterySaverInEffect && !activeMode) {
                 Log.d(TAG, "Skipping network provider (on battery, parked — saving power)")
             } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                // Use 0m min distance so network delivers at least periodic updates even
+                // when stationary — important for showing initial position on the map.
+                // The interval is doubled so it doesn't drain battery with frequent polls.
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
                     intervalMs * 2, // less frequent — just a fallback for map
-                    30f, // only update if moved significantly
+                    0f, // no distance filter — deliver periodic updates when stationary
                     networkLocationListener,
                     Looper.getMainLooper()
                 )

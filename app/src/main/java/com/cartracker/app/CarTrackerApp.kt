@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.preference.PreferenceManager
 import com.cartracker.app.data.AppDatabase
 import com.cartracker.app.settings.AppSettingsStore
+import com.cartracker.app.util.SslCompat
 import org.osmdroid.config.Configuration
 
 class CarTrackerApp : Application() {
@@ -16,6 +17,9 @@ class CarTrackerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Fix SSL trust for Android 7.0/7.1 (ISRG Root X1 / Let's Encrypt)
+        SslCompat.install(this)
 
         // Initialize osmdroid BEFORE any MapView is created
         Configuration.getInstance().apply {

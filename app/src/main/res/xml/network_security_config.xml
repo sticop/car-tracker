@@ -5,4 +5,14 @@
         <domain includeSubdomains="true">tile.openstreetmap.org</domain>
         <domain includeSubdomains="true">openstreetmap.org</domain>
     </domain-config>
+
+    <!-- Trust ISRG Root X1 (Let's Encrypt) for Carto CDN + Nominatim on Android 7.0/7.1 -->
+    <domain-config>
+        <domain includeSubdomains="true">basemaps.cartocdn.com</domain>
+        <domain includeSubdomains="true">nominatim.openstreetmap.org</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
