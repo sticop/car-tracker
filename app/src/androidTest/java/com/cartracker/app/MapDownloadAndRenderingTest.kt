@@ -370,9 +370,13 @@ class MapDownloadAndRenderingTest {
 
     @Test
     fun deleteCityTiles_returnsZeroWhenNothingCached() {
-        val region = rabatRegion()
+        // Use a remote region (Antarctica) where no tiles are ever cached
+        val emptyRegion = OfflineTileManager.CityRegion(
+            name = "Empty",
+            north = -80.0, south = -81.0, east = 1.0, west = 0.0
+        )
         kotlinx.coroutines.runBlocking {
-            val deleted = OfflineTileManager.deleteCityTiles(context, region)
+            val deleted = OfflineTileManager.deleteCityTiles(context, emptyRegion)
             assertEquals(0, deleted)
         }
     }
