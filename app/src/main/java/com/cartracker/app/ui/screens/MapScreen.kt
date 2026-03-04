@@ -313,10 +313,38 @@ fun MapScreen(viewModel: MainViewModel) {
         Column(
             modifier = Modifier
                 .statusBarsPadding()
-                .padding(start = edgePadding, top = 8.dp)
+                .padding(start = edgePadding, top = 2.dp)
                 .align(Alignment.TopStart),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            // ── Time filter pills (horizontal scroll) ──
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TimeFilter.entries.forEach { filter ->
+                    val isSelected = timeFilter == filter
+                    Surface(
+                        modifier = Modifier.clickable {
+                            viewModel.setTimeFilter(filter)
+                            viewModel.selectTrip(null)
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isSelected) UberGreen else UberCardDark.copy(alpha = 0.85f),
+                        shadowElevation = if (isSelected) 4.dp else 2.dp
+                    ) {
+                        Text(
+                            text = filter.label,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.Black else UberTextSecondary
+                        )
+                    }
+                }
+            }
+
             // ── Speed pill with status ──
             Column(
                 modifier = Modifier
@@ -377,34 +405,6 @@ fun MapScreen(viewModel: MainViewModel) {
                         color = UberTextSecondary,
                         modifier = Modifier.padding(bottom = 3.dp)
                     )
-                }
-            }
-
-            // ── Time filter pills (horizontal scroll) ──
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                TimeFilter.entries.forEach { filter ->
-                    val isSelected = timeFilter == filter
-                    Surface(
-                        modifier = Modifier.clickable {
-                            viewModel.setTimeFilter(filter)
-                            viewModel.selectTrip(null)
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected) UberGreen else UberCardDark.copy(alpha = 0.85f),
-                        shadowElevation = if (isSelected) 4.dp else 2.dp
-                    ) {
-                        Text(
-                            text = filter.label,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.Black else UberTextSecondary
-                        )
-                    }
                 }
             }
         }
