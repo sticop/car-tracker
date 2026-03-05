@@ -539,7 +539,14 @@ class LocationTrackingService : LifecycleService() {
         // Sanity check 1: discard impossible speeds (GPS glitch)
         if (rawSpeedKmh > MAX_REALISTIC_SPEED) {
             Log.w(TAG, "Ignoring unrealistic speed: $rawSpeedKmh km/h (max: $MAX_REALISTIC_SPEED)")
-            // Don't update lastLocation — treat this reading as garbage
+            // Update reference to prevent cascading: if a GPS teleport happens,
+            // keeping the old reference makes the time gap grow, which makes the
+            // acceleration limiter increasingly permissive on subsequent readings.
+            // By updating the reference, the next reading computes speed from the
+            // new position (short time gap → tight acceleration window).
+            lastLocation = location
+            lastLocationTime = location.time
+            // Keep lastValidSpeed unchanged — we don't trust this reading's speed
             return
         }
 
@@ -552,7 +559,15 @@ class LocationTrackingService : LifecycleService() {
                 val maxAllowedSpeed = lastValidSpeed + (MAX_ACCELERATION_KMH_PER_SEC * timeDiffSec)
                 if (rawSpeedKmh > maxAllowedSpeed && rawSpeedKmh > 30f) {
                     Log.w(TAG, "Acceleration spike rejected: $rawSpeedKmh km/h (max allowed: ${String.format("%.1f", maxAllowedSpeed)} km/h, prev: ${String.format("%.1f", lastValidSpeed)} km/h, dt: ${String.format("%.1f", timeDiffSec)}s)")
-                    // Don't update lastLocation — keep the good reference point
+                    // Update reference to prevent cascading false positives.
+                    // Same reasoning as MAX_REALISTIC_SPEED above.
+                    lastLocation = location
+                    lastLocationTime = location.time
+                    // Ratchet lastValidSpeed up to the max allowed speed so the
+                    // limiter converges toward the actual speed. Without this,
+                    // lastValidSpeed stays at 0 and every subsequent reading at
+                    // driving speed gets permanently rejected.
+                    lastValidSpeed = maxAllowedSpeed
                     return
                 }
             }
